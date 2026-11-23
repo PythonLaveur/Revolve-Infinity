@@ -1,0 +1,9 @@
+{
+  "name": "revolve-turn-based-moba",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "npx serve .",
+    "check": "node --check main.js"
+  }
+}

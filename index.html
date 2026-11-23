@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Revolve // Tactical MOBA</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="game-shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">R</span>
+          <div><strong>REVOLVE</strong><small>TURN-BASED MOBA</small></div>
+        </div>
+        <div class="round-status">
+          <span id="turnLabel">BLUE TURN</span>
+          <div class="scoreboard" aria-label="Score">
+            <span id="blueScore">BLUE 0</span><b>—</b><span id="redScore">RED 0</span>
+          </div>
+          <div class="turn-track"><i id="turnProgress"></i></div>
+        </div>
+        <button id="endTurn" class="end-turn">END TURN <span>↵</span></button>
+      </header>
+
+      <section class="arena-layout">
+        <aside class="team-panel">
+          <div class="panel-title">YOUR SQUAD <span id="troopCount">0/7</span></div>
+          <div id="squadList" class="squad-list"></div>
+          <div class="battle-log-heading red-log-heading">RED BATTLE LOG</div>
+          <div class="battle-log red" id="battleLogRed" aria-label="Red team event log"></div>
+        </aside>
+
+        <section class="battlefield-wrap">
+          <div class="resource-row">
+            <div class="resource elixir">
+              <span class="resource-gem">◆</span>
+              <div><small>ELIXIR</small><strong id="elixirValue">1200</strong></div>
+            </div>
+            <div class="mid-objective">
+              <small>CONTROL</small><strong id="controlValue">50%</strong>
+            </div>
+            <div class="resource dark">
+              <span class="resource-gem">◆</span>
+              <div><small>APPROBATION POINTS</small><strong id="apValue">0</strong></div>
+            </div>
+          </div>
+          <canvas id="battlefield" width="1560" height="570"></canvas>
+        </section>
+
+        <aside class="enemy-panel">
+          <div class="panel-title enemy">ENEMY CORE <span id="enemyCount">0/7</span></div>
+          <div id="enemyList" class="enemy-list"></div>
+          <div class="battle-log-heading blue-log-heading">BLUE BATTLE LOG</div>
+          <div class="battle-log blue" id="battleLogBlue" aria-label="Blue team event log"></div>
+        </aside>
+      </section>
+
+      <footer class="hand-dock">
+        <div class="deck-meta">
+          <div class="deck-stack"><span id="deckCount">49</span><small>DECK</small></div>
+          <div class="hand-meta">
+            <small>ACTIVE HAND</small><strong id="handCount">10 CARDS</strong>
+          </div>
+        </div>
+        <div id="hand" class="hand"></div>
+        <button id="cancelAction" class="cancel-action">CANCEL</button>
+      </footer>
+    </main>
+
+    <div id="toast" class="toast"></div>
+    <section id="troopInspector" class="troop-inspector hidden"></section>
+    <section id="abilityModal" class="ability-modal hidden"></section>
+    <section id="redrawModal" class="redraw-modal hidden">
+      <strong>Discard abilities</strong><span>Select up to 3 ability cards</span>
+      <div>
+        <button id="confirmRedraw">CONFIRM</button><button id="cancelRedraw">CANCEL</button>
+      </div>
+    </section>
+    <script type="module" src="main.js"></script>
+  </body>
+</html>
