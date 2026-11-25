@@ -1,0 +1,6 @@
+// Balance source of truth for alchemist.
+export const HERO_STATS = { id: 'alchemist', aggro: 1, size: 1, name: 'Alchemist', icon: 'A', hp: 590, force: 45, atk: 54, apt: 38, armor: 35, magicResist: 60, range: 110, sight: 143, attackTypes: ['ground','air'], basicAttack: { damageType: 'physical', scaling: { atk: 0.8 } }, attackCost: 10, initialAC: 10, movement: 34, elixirCost: 600, mass: 1, color: '#a4a25c', placeholder: true, description: 'Placeholder hero with generic abilities.' };
+export const ABILITIES = [{ id: 'alchemist_guard', name: 'Guard', troop: 'alchemist', darkCost: 150, apCost: 0, targeting: 'self', shieldScaling: { hp: 0.14 }, duration: 3, description: 'Gain a modest shield for 3 turns.' },
+{ id: 'alchemist_surge', name: 'Surge', troop: 'alchemist', darkCost: 200, apCost: 0, targeting: 'self', acGenerationMultiplier: 1.35, duration: 3, description: 'Increase AC generation for 3 turns.' },
+{ id: 'alchemist_strike', name: 'Strike', troop: 'alchemist', darkCost: 250, apCost: 0, targeting: 'area', castRange: 122.4, radius: 30, scaling: { atk: 0.8 }, damageType: 'physical', description: 'Deal a small area burst of physical damage.' }];
+export default { HERO_STATS, ABILITIES };

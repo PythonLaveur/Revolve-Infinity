@@ -1,8 +1,25 @@
-import { Effect } from './effects.js';
+import { EffectSystem } from '../engine/effect_system.js';
+import { edgeDistanceBetween, RADIUS_PER_SIZE } from './stats.js';
+
+let nextUnitId = 1;
+
+export function aggroAdjustedDistance(source, target) {
+  const distance = typeof source.distanceTo === 'function'
+    ? source.distanceTo(target)
+    : Math.hypot(source.x - target.x, source.y - target.y);
+  const aggro = Number(target?.aggro ?? target?.stats?.aggro ?? 1);
+  return distance / Math.max(0.01, Number.isFinite(aggro) ? aggro : 1);
+}
 
 export class Troop {
   constructor(stats, team, x, y) {
+    this.id = `unit-${nextUnitId++}`;
     this.stats = stats;
+    if (this.stats.aggro === undefined || this.stats.aggro === null) this.stats.aggro = 1;
+    if (this.stats.size === undefined || this.stats.size === null)
+      this.stats.size = this.stats.isMinion || this.stats.isDrone || this.stats.isSummon ? 0.5 : 1;
+    this.size = this.stats.size;
+    this.aggro = this.stats.aggro;
     this.team = team;
     this.x = x;
     this.y = y;
@@ -47,13 +64,13 @@ export class Troop {
     const armor = this.stats.armor + this.effects
       .filter((effect) => effect.type === 'defense')
       .reduce((bonus, effect) => bonus + effect.armor, 0);
-    return this.stats.id === 'rayka' ? armor * (1 + this.energy * 0.015) : armor;
+    return armor * (1 + this.energy * (this.stats.energyDefenseMultiplier || 0));
   }
   get magicResist() {
     const resist = this.stats.magicResist + this.effects
       .filter((effect) => effect.type === 'defense')
       .reduce((bonus, effect) => bonus + effect.magicResist, 0);
-    return this.stats.id === 'rayka' ? resist * (1 + this.energy * 0.015) : resist;
+    return resist * (1 + this.energy * (this.stats.energyDefenseMultiplier || 0));
   }
   get acGenerationMultiplier() {
     return this.effects
@@ -78,10 +95,7 @@ export class Troop {
     return this.movementRemaining * this.movementSpeedMultiplier;
   }
   get collisionRadius() {
-    if (this.stats.collisionRadius) return this.stats.collisionRadius;
-    if (this.stats.isBuilding) return 20;
-    if (this.stats.id === 'ninja' || this.isDrone || this.isMinion || this.isClone || this.isSummon || this.stats.isMinion || this.stats.isSummon) return 9;
-    return 14;
+    return RADIUS_PER_SIZE * this.size;
   }
   canTarget(target) {
     if (!target?.stats) return true;
@@ -96,24 +110,18 @@ export class Troop {
     const attackable = enemies.filter((enemy) => this.canTarget(enemy));
     if (this.stats.targetPreference !== 'structures') return attackable;
     const structures = attackable.filter((enemy) => !enemy.stats && enemy.hp > 0);
-    return structures.some((structure) => this.distanceTo(structure) <= this.sightRange)
+    return structures.some((structure) => this.distanceToEdge(structure) <= this.sightRange)
       ? structures
       : attackable.filter((enemy) => enemy.stats && enemy.hp > 0);
   }
   addEffect(effect) {
-    const existing = this.effects.find((active) => active.id === effect.id);
-    if (existing) Object.assign(existing, effect);
-    else this.effects.push(new Effect(effect));
+    return EffectSystem.apply(this, effect);
   }
   tickEffects() {
-    this.effects = this.effects.filter((effect) => effect.tick());
+    EffectSystem.tickTurns(this);
   }
   tickTimedEffects(seconds) {
-    this.effects = this.effects.filter((effect) => {
-      if (effect.remainingSeconds === undefined) return true;
-      effect.remainingSeconds -= seconds;
-      return effect.remainingSeconds > 0;
-    });
+    EffectSystem.tickTime(this, seconds);
   }
   takeDamage(amount) {
     let remaining = amount;
@@ -166,6 +174,12 @@ export class Troop {
       shield.momentumY = (shield.momentumY || 0) + dy;
     }
   }
+  resetMomentumShield() {
+    for (const shield of this.effects.filter((effect) => effect.type === 'momentum-shield')) {
+      shield.momentumX = 0;
+      shield.momentumY = 0;
+    }
+  }
   reset(enemies = null) {
     this.waypoints = [];
     if (enemies) this.validateFocus(enemies);
@@ -188,6 +202,7 @@ export class Troop {
     this.movementRemaining = this.stats.movement;
   }
   stun() {
+    this.resetMomentumShield();
     this.stunned = true;
     this.focus = null;
     this.waypoints = [];
@@ -215,16 +230,17 @@ export class Troop {
     if (!this.focus) {
       const valid = this.eligibleTargets(enemies)
         .filter((e) => e.hp > 0 && this.attackDistanceTo(e) <= this.attackRange)
-        .sort((a, b) => this.distanceTo(a) - this.distanceTo(b));
+        .sort((a, b) => aggroAdjustedDistance(this, a) - aggroAdjustedDistance(this, b));
       this.focus = valid[0] || null;
     }
   }
   distanceTo(other) {
     return Math.hypot(this.x - other.x, this.y - other.y);
   }
+  distanceToEdge(other) {
+    return edgeDistanceBetween(this, other);
+  }
   attackDistanceTo(other) {
-    const structureRadius = other?.type === 'base' ? 46 : other?.layer ? 37 : 0;
-    const targetRadius = structureRadius || other?.collisionRadius || (other?.stats ? 14 : 0);
-    return Math.max(0, this.distanceTo(other) - targetRadius);
+    return edgeDistanceBetween(this, other);
   }
 }

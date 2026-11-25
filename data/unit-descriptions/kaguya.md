@@ -1,11 +1,11 @@
 # Kaguya
 
-Kaguya uses the Phoenix reference: 745 HP, 35 armor, 90 magic resistance, 43.5 attack range, 143 sight range, medium movement (40.8 per turn), and 800 Elixir. Her defenses shift toward magic resistance while her average effective HP stays near the Phoenix baseline. She flies and focuses an injured ally (never herself); each basic attack heals that ally and up to two other injured allies in range for 10% of Kaguya's maximum HP each.
+Kaguya is an 800-Elixir flying support hero with 745 HP, 35 armor, 90 magic resistance, 81.6 attack range and 143 sight range. She focuses injured allies, and her basic attack heals the focused ally and up to two other injured allies in range.
 
 ## Abilities
 
-- **Shield Ricochet** — aim a direction up to 300 units away. The physical shield hits the first enemy, then ricochets to up to two more enemies within 150 units of the previous hit. Each hit applies a 6-turn bleed whose intensity is 20% of the health damage dealt; when a marked unit spends AC, it takes raw damage equal to that intensity. Costs 150 AP.
-- **Force Field** — self-target; for 4 global turn ends, reflect 30% of health damage suffered by allied units within 140 units of Kaguya to the attacker. Costs 400 AP.
-- **Skyfall Bomb** — choose an area anywhere on the map. The location marker is visible only to Kaguya's team. After 2 global turn ends, the bomb deals magical area damage in a 68-unit radius and knocks enemies away. Targets within 27.2 units of the center take 20% more damage and 50% more knockback; damage scales with Kaguya's ATK. The impact shakes the arena. Costs 700 AP.
+- **Shield Ricochet** — aim in a direction up to 180 units away. The physical shield hits the first enemy, then ricochets to up to two more enemies within 70 units of the previous hit. Every troop hit receives a six-turn bleed. Bleed deals raw damage equal to 50% of the shield's damage whenever its target spends AC; arena structures do not bleed. Damage to arena structures is 40%. Costs 150 AP.
+- **Force Field** — for four global turn ends, reflect 40% of health damage taken by allied troops within 140 units of Kaguya to the attacker. Costs 300 AP.
+- **Skyfall Bomb** — choose an area anywhere on the map. After two global turn ends, deal magic area damage in an 80-unit radius and knock enemies away. The inner 40-unit radius deals 20% more damage and 50% more knockback. Arena structures take 35% damage; the impact shakes the arena. Costs 700 AP.
 
-Shield Ricochet's range and ricochet distance, Force Field radius, and Skyfall Bomb's knockback are prototype values where the concept did not specify numbers.
+Balance values and ability details are sourced from [Kaguya's stat module](../stats/kaguya.js); this page summarizes them for players.

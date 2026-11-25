@@ -1,0 +1,67 @@
+// Balance source of truth for ninja.
+export const HERO_STATS = {
+  id: 'ninja',
+  aggro: 0.8,
+  size: 0.7,
+  cloneSize: 0.5,
+  name: 'Ninja',
+  icon: 'N',
+  squadSize: 7,
+  hp: 134,
+  force: 8,
+  atk: 40,
+  apt: 100,
+  armor: 20,
+  magicResist: 15,
+  range: 20,
+  sight: 143,
+  attackTypes: ['ground'],
+  basicAttack: { damageType: 'magic', scaling: { apt: 1.1 } },
+  attackCost: 11,
+  initialAC: 11,
+  movement: 61.2,
+  elixirCost: 400,
+  color: '#d89a65',
+  mass: 0.25,
+  description:
+    'A squad of seven fast melee ninjas that can gain temporary magic penetration through an ability.',
+};
+export const ABILITIES = [
+  {
+    id: 'ninja_shuriken_fan',
+    name: 'Piercing Shuriken',
+    troop: 'ninja',
+    darkCost: 100,
+    apCost: 0,
+    targeting: 'self',
+    magicPenBuff: 60,
+    duration: 4,
+    description: 'Ninja gains 60% magic penetration for 4 global turn ends.',
+  },
+  {
+    id: 'ninja_paralyzing_strikes',
+    name: 'Paralyzing Strikes',
+    troop: 'ninja',
+    darkCost: 200,
+    apCost: 0,
+    targeting: 'self',
+    groupEffect: 'mark-on-hit',
+    marksToStun: 10,
+    stunDuration: 2,
+    duration: 10,
+    description:
+      'For 10 global turn ends, squad attacks mark enemy troops. At 10 marks, the target is stunned for 2 global turn ends.',
+  },
+  {
+    id: 'ninja_clones',
+    name: 'Shadow Replicas',
+    troop: 'ninja',
+    darkCost: 300,
+    apCost: 0,
+    targeting: 'self',
+    groupEffect: 'clone-on-hit',
+    description:
+      'Each original Ninja creates a controlless clone after a basic attack, up to 2 living clones per original. Clones cannot create clones. This effect lasts for the rest of the match.',
+  },
+];
+export default { HERO_STATS, ABILITIES };

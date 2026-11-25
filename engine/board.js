@@ -1,9 +1,13 @@
+import { BASE_STATS, TURRET_STATS, STRUCTURE_LAYOUT } from '../data/stats/turrets.js';
+import { RADIUS_PER_SIZE } from '../units/stats.js';
+
 export class Board {
   constructor() {
     this.width = 1560;
     this.height = 570;
     this.troops = [];
     this.projectiles = [];
+    this.attackAnimations = [];
     this.zones = [];
     this.strikes = [];
     this.impacts = [];
@@ -15,160 +19,17 @@ export class Board {
       { x: 700, y: 385, w: 160, h: 84 },
     ];
     this.terrains = [];
-    this.towers = [
-      {
-        team: 0,
-        x: 135,
-        y: 285,
-        hp: 2838,
-        maxHp: 2838,
-        armor: 70,
-        magicResist: 70,
-        range: 247.5,
-        damage: 123,
-        focus: null,
-        targetable: true,
-        type: 'base',
-      },
-      {
-        team: 1,
-        x: 1425,
-        y: 285,
-        hp: 2838,
-        maxHp: 2838,
-        armor: 70,
-        magicResist: 70,
-        range: 247.5,
-        damage: 123,
-        focus: null,
-        targetable: true,
-        type: 'base',
-      },
-    ];
-    this.turrets = [
-      {
-        team: 0,
-        x: 245,
-        y: 143,
-        hp: 2289,
-        maxHp: 2289,
-        armor: 60,
-        magicResist: 60,
-        range: 204,
-        damage: 153,
-        focus: null,
-        targetable: true,
-        layer: 'inner',
-        radius: 27,
-      },
-      {
-        team: 0,
-        x: 245,
-        y: 427,
-        hp: 2289,
-        maxHp: 2289,
-        armor: 60,
-        magicResist: 60,
-        range: 204,
-        damage: 153,
-        focus: null,
-        targetable: true,
-        layer: 'inner',
-        radius: 27,
-      },
-      {
-        team: 0,
-        x: 500,
-        y: 143,
-        hp: 2289,
-        maxHp: 2289,
-        armor: 60,
-        magicResist: 60,
-        range: 204,
-        damage: 153,
-        focus: null,
-        targetable: true,
-        layer: 'outer',
-        radius: 27,
-      },
-      {
-        team: 0,
-        x: 500,
-        y: 427,
-        hp: 2289,
-        maxHp: 2289,
-        armor: 60,
-        magicResist: 60,
-        range: 204,
-        damage: 153,
-        focus: null,
-        targetable: true,
-        layer: 'outer',
-        radius: 27,
-      },
-      {
-        team: 1,
-        x: 1315,
-        y: 143,
-        hp: 2289,
-        maxHp: 2289,
-        armor: 60,
-        magicResist: 60,
-        range: 204,
-        damage: 153,
-        focus: null,
-        targetable: true,
-        layer: 'inner',
-        radius: 27,
-      },
-      {
-        team: 1,
-        x: 1315,
-        y: 427,
-        hp: 2289,
-        maxHp: 2289,
-        armor: 60,
-        magicResist: 60,
-        range: 204,
-        damage: 153,
-        focus: null,
-        targetable: true,
-        layer: 'inner',
-        radius: 27,
-      },
-      {
-        team: 1,
-        x: 1060,
-        y: 143,
-        hp: 2289,
-        maxHp: 2289,
-        armor: 60,
-        magicResist: 60,
-        range: 204,
-        damage: 153,
-        focus: null,
-        targetable: true,
-        layer: 'outer',
-        radius: 27,
-      },
-      {
-        team: 1,
-        x: 1060,
-        y: 427,
-        hp: 2289,
-        maxHp: 2289,
-        armor: 60,
-        magicResist: 60,
-        range: 204,
-        damage: 153,
-        focus: null,
-        targetable: true,
-        layer: 'outer',
-        radius: 27,
-      },
-    ];
+    this.towers = STRUCTURE_LAYOUT.base.map((position) => ({
+      ...BASE_STATS, ...position, radius: BASE_STATS.size * RADIUS_PER_SIZE,
+      maxHp: BASE_STATS.hp, focus: null, targetable: true, type: 'base',
+    }));
+    this.turrets = STRUCTURE_LAYOUT.turrets.map((position) => ({
+      ...TURRET_STATS, ...position, radius: TURRET_STATS.size * RADIUS_PER_SIZE,
+      maxHp: TURRET_STATS.hp, focus: null, targetable: true,
+    }));
   }
   addTroop(troop) {
+    troop.game = this.game || null;
     this.troops.push(troop);
   }
   troopsFor(team) {
@@ -176,7 +37,7 @@ export class Board {
   }
   enemyTargets(team) {
     return [
-      ...this.troops.filter((t) => t.team !== team && t.hp > 0 && !t.burrowed),
+      ...this.troops.filter((t) => t.team !== team && t.hp > 0 && !t.burrowed && !t.isUntargetable),
       ...this.turrets.filter((t) => t.team !== team && t.hp > 0),
       ...this.towers.filter((t) => t.team !== team && t.hp > 0),
     ];

@@ -12,6 +12,9 @@ export class Deck {
   draw() {
     return this.cards.shift() || null;
   }
+  peek() {
+    return this.cards[0] || null;
+  }
   recycle(card) {
     if (!card) return false;
     if (!this.cards.includes(card)) this.cards.push(card);

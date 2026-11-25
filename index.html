@@ -44,8 +44,19 @@
               <span class="resource-gem">◆</span>
               <div><small>APPROBATION POINTS</small><strong id="apValue">0</strong></div>
             </div>
+            <div class="arena-zoom-controls" aria-label="Arena zoom controls">
+              <button id="zoomOut" aria-label="Zoom out">−</button>
+              <input id="arenaZoom" type="range" min="65" max="150" value="100" aria-label="Arena zoom" />
+              <output id="arenaZoomValue">100%</output>
+              <button id="zoomIn" aria-label="Zoom in">+</button>
+              <button id="zoomReset" aria-label="Reset zoom">↺</button>
+            </div>
           </div>
-          <canvas id="battlefield" width="1560" height="570"></canvas>
+          <div class="arena-canvas-viewport">
+            <div class="arena-canvas-stage">
+              <canvas id="battlefield" width="1560" height="570"></canvas>
+            </div>
+          </div>
         </section>
 
         <aside class="enemy-panel">
@@ -57,26 +68,54 @@
       </section>
 
       <footer class="hand-dock">
-        <div class="deck-meta">
-          <div class="deck-stack"><span id="deckCount">49</span><small>DECK</small></div>
-          <div class="hand-meta">
-            <small>ACTIVE HAND</small><strong id="handCount">10 CARDS</strong>
-          </div>
-        </div>
-        <div id="hand" class="hand"></div>
-        <button id="cancelAction" class="cancel-action">CANCEL</button>
+        <section class="hand-row hero-hand-row">
+          <div class="hand-row-label"><small>HEROES</small><strong id="heroHandCount">0/3</strong></div>
+          <div id="heroHand" class="hand hero-hand"></div>
+          <div class="next-card-wrap"><small>NEXT HERO</small><div id="nextHeroCard"></div></div>
+        </section>
+        <section class="hand-row ability-hand-row">
+          <div class="hand-row-label"><small>SKILLS</small><strong id="abilityHandCount">0/9</strong></div>
+          <div id="abilityHand" class="hand ability-hand"></div>
+          <div class="next-card-wrap"><small>NEXT SKILL</small><div id="nextAbilityCard"></div></div>
+        </section>
+        <aside class="hand-controls">
+          <button id="cancelAction" class="cancel-action">CANCEL</button>
+          <button id="discardAp" class="cancel-action">REDRAW −100 AP</button>
+          <button id="discardElixir" class="cancel-action">REDRAW −100 ELIXIR</button>
+          <button id="surrender" class="cancel-action surrender-action">SURRENDER</button>
+        </aside>
       </footer>
     </main>
 
     <div id="toast" class="toast"></div>
+    <section id="draftScreen" class="draft-screen" aria-label="Hero draft">
+      <div class="draft-heading"><small>HERO DRAFT</small><h1>Starting the game…</h1></div>
+      <p>If this message stays here, serve the project locally, then open <code>http://localhost:8000</code>. In PowerShell, run <code>py -m http.server 8000</code> from the project folder. Do not open <code>index.html</code> directly.</p>
+    </section>
+    <section id="matchSummary" class="match-summary hidden" aria-label="Match summary"></section>
     <section id="troopInspector" class="troop-inspector hidden"></section>
     <section id="abilityModal" class="ability-modal hidden"></section>
     <section id="redrawModal" class="redraw-modal hidden">
-      <strong>Discard abilities</strong><span>Select up to 3 ability cards</span>
+      <strong>Discard skills</strong><span>Select up to 3 skill cards</span>
       <div>
         <button id="confirmRedraw">CONFIRM</button><button id="cancelRedraw">CANCEL</button>
       </div>
     </section>
+    <script>
+      const showStartupError = (message) => {
+        const screen = document.getElementById('draftScreen');
+        if (!screen || screen.querySelector('[data-startup-error]')) return;
+        screen.innerHTML = `<div class="draft-heading"><small>GAME STARTUP ERROR</small><h1 data-startup-error></h1></div><p>${message}</p>`;
+        screen.classList.remove('hidden');
+      };
+      window.addEventListener('error', (event) => {
+        if (event.filename && /\.js(?:$|\?)/.test(event.filename))
+          showStartupError(`Could not load ${event.filename.split('/').pop()}: ${event.message || 'module loading failed'}`);
+      });
+      window.addEventListener('unhandledrejection', (event) => {
+        showStartupError(event.reason?.message || String(event.reason || 'Module loading failed'));
+      });
+    </script>
     <script type="module" src="main.js"></script>
   </body>
 </html>

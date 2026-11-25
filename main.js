@@ -2,17 +2,25 @@ import { Game } from './engine/game.js';
 import { Renderer } from './rendering/renderer.js';
 import { Hud } from './ui/hud.js';
 import { BottomPanel } from './ui/bottom_panel.js';
+import { DraftPanel } from './ui/draft_panel.js';
+import { MatchSummary } from './ui/match_summary.js';
 import { applyResistance, scaleDamage } from './units/damage.js';
+import { collisionRadiusOf, edgeDistanceBetween } from './units/stats.js';
 
 const canvas = document.getElementById('battlefield');
 const renderer = new Renderer(canvas);
 const hud = new Hud();
 const bottom = new BottomPanel();
 const game = new Game();
+const draftPanel = new DraftPanel((heroId) => {
+  if (game.chooseDraftHero(heroId)) renderUI();
+});
+const matchSummary = new MatchSummary();
 let selectedCard = null,
   selectedMode = 'select',
   activeTroop = null,
-  hover = { x: 780, y: 285 };
+  hover = { x: 780, y: 285 },
+  deploymentPreview = null;
 let redrawMode = false,
   redrawResource = 'elixir',
   selectedRedraw = [];
@@ -48,18 +56,23 @@ const fieldPoint = (e) => {
   };
   return raw;
 };
+function updateDeploymentPreview() {
+  deploymentPreview = selectedMode === 'deploy' && selectedCard
+    ? game.getDeploymentPlan(selectedCard, hover.x, hover.y)
+    : null;
+}
 
 function troopAt(p) {
-  return game.board.troops.find((t) => !t.burrowed && Math.hypot(t.x - p.x, t.y - p.y) <= 28);
+  return game.board.troops.find((t) => !t.burrowed && !t.isUntargetable && Math.hypot(t.x - p.x, t.y - p.y) <= t.collisionRadius + 8);
 }
 function turretAt(p) {
   return game.board.turrets.find(
-    (t) => t.hp > 0 && t.team !== game.turns.currentTeam && Math.hypot(t.x - p.x, t.y - p.y) <= 36,
+    (t) => t.hp > 0 && t.team !== game.turns.currentTeam && Math.hypot(t.x - p.x, t.y - p.y) <= t.radius + 8,
   );
 }
 function baseAt(p) {
   return game.board.towers.find(
-    (t) => t.hp > 0 && t.team !== game.turns.currentTeam && Math.hypot(t.x - p.x, t.y - p.y) <= 32,
+    (t) => t.hp > 0 && t.team !== game.turns.currentTeam && Math.hypot(t.x - p.x, t.y - p.y) <= t.radius + 8,
   );
 }
 
@@ -74,7 +87,7 @@ function abilityTargetAt(p, ability, caster = activeTroop) {
     !game.board.turrets.includes(target) && !game.board.towers.includes(target)) return null;
   if (ability.targetTeam === 'ally' && (target.team !== caster.team || target === caster)) return null;
   if (ability.targetTeam === 'enemy' && target.team === caster.team) return null;
-  if (ability.targetRange && caster.distanceTo(target) > ability.targetRange) return null;
+  if (ability.targetRange && edgeDistanceBetween(caster, target) > ability.targetRange) return null;
   return target;
 }
 
@@ -90,11 +103,12 @@ function showTroopInspector() {
     .map((a) => `${a.name} (${a.darkCost} AP / ${a.apCost} AC)`)
     .join('  •  ');
   const effectNames = activeTroop.effects.map((effect) => {
-    if (effect.type === 'rookie-mark') return `Rookie marks ${effect.stacks}/3`;
     const duration = effect.remainingSeconds !== undefined
       ? `${effect.remainingSeconds.toFixed(1)}s`
       : `${effect.remainingTurns} turn ends`;
     const turns = duration;
+    if (effect.stacks !== undefined) return `${effect.displayLabel || 'Stacks'} ${effect.stacks}/${effect.maxStacks || '∞'} (${turns})`;
+    if (effect.displayLabel) return `${effect.displayLabel} (${turns})`;
     if (effect.type === 'attack-range') return `Attack range ×${effect.multiplier} (${turns})`;
     if (effect.type === 'defense') return `Defense +${effect.armor} / +${effect.magicResist} (${turns})`;
     if (effect.type === 'ac-generation') return `AC generation ×${effect.multiplier} (${turns})`;
@@ -110,19 +124,20 @@ function showTroopInspector() {
     if (effect.type === 'silence') return `Silenced (${turns})`;
     if (effect.type === 'launch-next-hit') return `Next troop hit launches target (${turns})`;
     if (effect.type === 'airborne') return `Airborne (${turns})`;
-    if (effect.type === 'ninja-marks') return `Ninja marks ${effect.stacks}/10 (${turns})`;
     if (effect.type === 'magic-penetration') return `Magic penetration +${effect.amount}% (${turns})`;
     if (effect.type === 'protective-dome') return `Dome ${Math.ceil(effect.remainingAmount)} / ${effect.radius} range (${turns})`;
     if (effect.type === 'bleed') return `Bleed ${effect.intensity} raw damage per AC spend (${turns})`;
     if (effect.type === 'damage-reflect') return `Reflect ${Math.round(effect.multiplier * 100)}% within ${effect.radius} (${turns})`;
-    if (effect.type === 'hugo-wall') return `Wall protects ${effect.selectedAlly?.stats.name || 'nearby ally'} (${turns})`;
     if (effect.type === 'stun') return `Stunned (${turns})`;
     return `${effect.id} (${turns})`;
   }).join(' · ') || 'None';
+  const resourceDisplay = s.resourceLabel
+    ? `<span>${s.resourceLabel.toUpperCase()} <b>${activeTroop.energy.toFixed(1)}${s.resourceMaximum ? `/${s.resourceMaximum}` : ''}</b></span>${s.resourceDecayGraceTurns !== undefined ? `<span>DECAY GRACE <b>${Math.max(0, s.resourceDecayGraceTurns - activeTroop.energyIdleTurns)} turns</b></span>` : ''}`
+    : '';
   const isOwner = activeTroop.team === game.turns.currentTeam;
   el.innerHTML = `<button class="inspector-close" id="closeInspector" aria-label="Close troop panel">×</button>
     <div class="inspector-heading"><strong>${s.name}</strong><span class="troop-state ${activeTroop.stunned ? 'stunned' : ''}">${activeTroop.burrowed ? 'UNDERGROUND' : activeTroop.stunned ? 'STUNNED' : 'ACTIVE'}</span><span class="troop-hp">HP <b>${activeTroop.hp}/${activeTroop.maxHp}</b></span></div>
-    <div class="inspector-metrics"><span>HP <b>${activeTroop.hp}/${activeTroop.maxHp}</b></span>${s.isBuilding ? '<span>TYPE <b>BUILDING</b></span><span>DECAY <b>Each turn</b></span>' : `<span>FORCE <b>${s.force}</b></span><span>ATTACK <b>${s.atk}</b></span><span>POWER <b>${s.apt}</b></span><span>ARMOR <b>${activeTroop.armor.toFixed(1)}</b></span><span>MAGIC RESIST <b>${activeTroop.magicResist.toFixed(1)}</b></span><span>RANGE <b>${activeTroop.attackRange}</b></span><span>SIGHT <b>${activeTroop.sightRange}</b></span><span>${s.movementType === 'air' ? 'FLY MOVE' : 'MOVE'} <b>${Math.round(activeTroop.availableMovement)}/${s.movement}</b></span>`}${s.flatArmorPen ? `<span>ARMOR PEN <b>${s.flatArmorPen}</b></span>` : ''}${s.id === 'hugo' ? `<span>ENERGY <b>${activeTroop.energy.toFixed(1)}/50</b></span>` : s.id === 'rayka' ? `<span>ENERGY <b>${activeTroop.energy.toFixed(1)}</b></span><span>ENERGY DECAY <b>${Math.max(0, 2 - activeTroop.energyIdleTurns)} turns grace</b></span>` : ''}<span>AC <b>${activeTroop.ac}</b></span></div>
+    <div class="inspector-metrics"><span>HP <b>${activeTroop.hp}/${activeTroop.maxHp}</b></span>${s.isBuilding ? '<span>TYPE <b>BUILDING</b></span><span>DECAY <b>Each turn</b></span>' : `<span>FORCE <b>${s.force}</b></span><span>ATTACK <b>${s.atk}</b></span><span>POWER <b>${s.apt}</b></span><span>ARMOR <b>${activeTroop.armor.toFixed(1)}</b></span><span>MAGIC RESIST <b>${activeTroop.magicResist.toFixed(1)}</b></span><span>RANGE <b>${activeTroop.attackRange}</b></span><span>SIGHT <b>${activeTroop.sightRange}</b></span><span>${s.movementType === 'air' ? 'FLY MOVE' : 'MOVE'} <b>${Math.round(activeTroop.availableMovement)}/${s.movement}</b></span>`}${s.flatArmorPen ? `<span>ARMOR PEN <b>${s.flatArmorPen}</b></span>` : ''}${resourceDisplay}<span>AC <b>${activeTroop.ac}</b></span></div>
     <div class="inspector-abilities">ABILITIES · ${abilityNames}</div>
     <div class="inspector-effects">EFFECTS · ${effectNames}</div>
     <div class="inspector-actions"><button id="inspectorMove" class="inspector-action ${selectedMode === 'move' ? 'is-selected' : ''}" ${!isOwner || activeTroop.stunned || activeTroop.burrowed || s.isBuilding || activeTroop.isDrone ? 'disabled' : ''}>MOVE <small>${Math.round(activeTroop.availableMovement)} DIST</small></button><button id="inspectorAttack" class="inspector-action ${selectedMode === 'attack' ? 'is-selected' : ''}" ${!isOwner || activeTroop.stunned || activeTroop.burrowed || s.isBuilding || activeTroop.isDrone ? 'disabled' : ''}>ATTACK <small>${s.attackCost} AC</small></button></div>`;
@@ -211,11 +226,12 @@ function selectCard(card) {
       else if (selectedRedraw.length < 3) selectedRedraw.push(card);
       else toast('Select up to 3 cards');
       renderUI();
-    } else toast('Only ability cards can be discarded');
+    } else toast('Only skill cards can be discarded');
     return;
   }
   selectedCard = card;
   selectedMode = card.kind === 'troop' ? 'deploy' : 'ability';
+  updateDeploymentPreview();
   if (card.kind === 'ability' && (!activeTroop || activeTroop.team !== game.turns.currentTeam || activeTroop.stats.id !== card.troopId)) {
     toast('Select your matching troop on the battlefield');
     selectedCard = null;
@@ -252,7 +268,7 @@ function basicAttack(target = null) {
   }
   if (!activeTroop.eligibleTargets(eligible).includes(resolvedTarget)) {
     toast(activeTroop.stats.targetPreference === 'structures'
-      ? 'Hugo prioritizes buildings while one is in sight'
+      ? `${activeTroop.stats.name} prioritizes structures while one is in sight`
       : 'This troop cannot target that unit type');
     return;
   }
@@ -262,11 +278,11 @@ function basicAttack(target = null) {
   }
   const damage = game.attack(activeTroop, resolvedTarget);
   if (damage !== false) {
-    const message = activeTroop.stats.id === 'rayka'
-      ? `${game.teamName(activeTroop.team)} Rayka summoned a thunderstorm at ${resolvedTarget.stats?.name || (resolvedTarget.layer ? `${resolvedTarget.layer} turret` : 'base')}`
-      : supportAttack
-      ? `${game.teamName(activeTroop.team)} Kaguya healed ${damage} HP across nearby allies`
-      : `${game.teamName(activeTroop.team)} ${activeTroop.stats.name} dealt ${damage} ${activeTroop.stats.basicAttack.damageType} damage`;
+    const targetName = resolvedTarget.stats?.name || (resolvedTarget.layer ? `${resolvedTarget.layer} turret` : 'base');
+    const message = game.applyHeroHook(activeTroop, 'attackLog', targetName, damage) ||
+      (supportAttack
+        ? `${game.teamName(activeTroop.team)} ${activeTroop.stats.name} restored ${damage} HP to allies`
+        : `${game.teamName(activeTroop.team)} ${activeTroop.stats.name} dealt ${damage} ${activeTroop.stats.basicAttack.damageType} damage`);
     game.addEvent(message, activeTroop.team);
     renderUI();
     return true;
@@ -304,15 +320,21 @@ function moveSelected(p) {
 }
 canvas.onmousemove = (e) => {
   hover = fieldPoint(e);
+  updateDeploymentPreview();
 };
 canvas.onclick = (e) => {
   if (game.isMoving() || game.winner !== null) return;
   const p = fieldPoint(e);
   if (selectedMode === 'deploy' && selectedCard) {
-    if (game.deploy(selectedCard, p.x, p.y)) toast(`${selectedCard.name} deployed`);
-    else toast(game.message);
-    selectedCard = null;
-    selectedMode = 'select';
+    if (game.deploy(selectedCard, p.x, p.y)) {
+      toast(`${selectedCard.name} deployed`);
+      selectedCard = null;
+      selectedMode = 'select';
+      deploymentPreview = null;
+    } else {
+      toast(game.message);
+      updateDeploymentPreview();
+    }
   } else if (selectedMode === 'ability' && selectedCard && activeTroop) {
     const ability = game.abilities[selectedCard.abilityId];
     const target = ability.targeting === 'unit' ? abilityTargetAt(p, ability, activeTroop) : null;
@@ -393,16 +415,42 @@ canvas.oncontextmenu = (e) => {
 function drawExtras() {
   const c = renderer.ctx;
   c.save();
+  if (deploymentPreview && selectedCard) {
+    const color = deploymentPreview.valid ? '#78f0ac' : '#ff6978';
+    const radius = game.collisionRadiusForStats(game.stats[selectedCard.troopId]);
+    const positions = deploymentPreview.positions.length
+      ? deploymentPreview.positions
+      : [{ x: hover.x, y: hover.y, radius }];
+    c.save();
+    c.globalAlpha = 0.68;
+    c.fillStyle = deploymentPreview.valid ? '#55e1dd35' : '#ff697835';
+    c.strokeStyle = color;
+    c.lineWidth = 2;
+    c.setLineDash(deploymentPreview.valid ? [] : [5, 4]);
+    for (const position of positions) {
+      const unitRadius = position.radius || radius;
+      c.beginPath();
+      c.arc(position.x, position.y, unitRadius, 0, Math.PI * 2);
+      c.fill();
+      c.stroke();
+      c.beginPath();
+      c.arc(position.x, position.y, 3, 0, Math.PI * 2);
+      c.fillStyle = color;
+      c.fill();
+      c.fillStyle = deploymentPreview.valid ? '#55e1dd35' : '#ff697835';
+    }
+    c.restore();
+  }
   if (activeTroop && activeTroop.hp > 0 && !activeTroop.burrowed) {
     c.lineWidth = 2;
     c.setLineDash([7, 6]);
     c.strokeStyle = '#f5f7fa99';
     c.beginPath();
-    c.arc(activeTroop.x, activeTroop.y, activeTroop.sightRange, 0, Math.PI * 2);
+    c.arc(activeTroop.x, activeTroop.y, activeTroop.sightRange + activeTroop.collisionRadius, 0, Math.PI * 2);
     c.stroke();
     c.strokeStyle = '#f4d35ecc';
     c.beginPath();
-    c.arc(activeTroop.x, activeTroop.y, activeTroop.attackRange, 0, Math.PI * 2);
+    c.arc(activeTroop.x, activeTroop.y, activeTroop.attackRange + activeTroop.collisionRadius, 0, Math.PI * 2);
     c.stroke();
     c.setLineDash([]);
   }
@@ -448,10 +496,15 @@ function drawExtras() {
     if (troop.hp <= 0 || troop.burrowed) continue;
     renderer.drawTroop(troop);
   }
-  for (const hugo of game.board.troops) {
-    const wall = hugo.effects.find((effect) => effect.type === 'hugo-wall' && effect.remainingTurns > 0);
-    if (!wall || hugo.hp <= 0) continue;
-    const { start, end } = game.hugoWallSegment(hugo, wall);
+  for (const troop of game.board.troops) {
+    const barrier = troop.effects.find((effect) => effect.type === 'line-barrier' && effect.remainingTurns > 0);
+    if (!barrier || troop.hp <= 0) continue;
+    const centerX = troop.x + Math.cos(barrier.angle) * (barrier.frontOffset || 0);
+    const centerY = troop.y + Math.sin(barrier.angle) * (barrier.frontOffset || 0);
+    const perpendicular = barrier.angle + Math.PI / 2;
+    const halfLength = barrier.length / 2;
+    const start = { x: centerX - Math.cos(perpendicular) * halfLength, y: centerY - Math.sin(perpendicular) * halfLength };
+    const end = { x: centerX + Math.cos(perpendicular) * halfLength, y: centerY + Math.sin(perpendicular) * halfLength };
     c.save();
     c.lineCap = 'round';
     c.strokeStyle = '#d5e1e8';
@@ -651,22 +704,31 @@ function drawExtras() {
     if (turret.hp <= 0) continue;
     c.save();
     c.translate(turret.x, turret.y);
-    c.fillStyle = turret.team === 0 ? '#55e1dd' : '#ff6978';
+    const radius = turret.radius;
+    const sizeScale = radius / 27;
+    const color = turret.team === 0 ? '#55e1dd' : '#ff6978';
+    c.fillStyle = color;
     c.shadowColor = c.fillStyle;
     c.shadowBlur = 18;
     c.beginPath();
-    c.arc(0, 0, 27, 0, Math.PI * 2);
+    c.arc(0, 0, radius, 0, Math.PI * 2);
     c.fill();
     c.fillStyle = '#151923';
     c.beginPath();
-    c.arc(0, 0, 15, 0, Math.PI * 2);
+    c.arc(0, 0, radius * (15 / 27), 0, Math.PI * 2);
     c.fill();
     c.fillStyle = '#eef2f7';
-    c.fillRect(-18, -4.5, 36, 9);
-    c.fillStyle = '#080b10';
-    c.fillRect(-33, 35, 66, 7);
-    c.fillStyle = turret.team === 0 ? '#55e1dd' : '#ff6978';
-    c.fillRect(-33, 35, 66 * Math.max(0, turret.hp / turret.maxHp), 7);
+    c.fillRect(-18 * sizeScale, -4.5 * sizeScale, 36 * sizeScale, 9 * sizeScale);
+    const gap = 4 * Math.sqrt(turret.size);
+    const barHeight = 5 * Math.sqrt(turret.size);
+    const barWidth = radius * 1.7;
+    const barY = -radius - gap - barHeight;
+    renderer.drawHealthBar(turret, -barWidth / 2, barY, barWidth, barHeight, color);
+    c.fillStyle = '#eef3f7';
+    c.font = `bold ${11 * Math.sqrt(turret.size)}px Segoe UI`;
+    c.textAlign = 'center';
+    c.textBaseline = 'bottom';
+    c.fillText(String(turret.hp), 0, barY - 3);
     c.restore();
   }
   for (const tower of game.board.towers) {
@@ -674,24 +736,31 @@ function drawExtras() {
     c.save();
     c.translate(tower.x, tower.y);
     const color = tower.team === 0 ? '#55e1dd' : '#ff6978';
+    const radius = tower.radius;
     c.fillStyle = color;
     c.shadowColor = color;
     c.shadowBlur = 22;
-    c.fillRect(-36, -36, 72, 72);
+    c.fillRect(-radius, -radius, radius * 2, radius * 2);
     c.fillStyle = '#10141b';
-    c.fillRect(-27, -27, 54, 54);
+    c.fillRect(-radius * 0.75, -radius * 0.75, radius * 1.5, radius * 1.5);
     c.fillStyle = color;
     c.beginPath();
-    c.moveTo(0, -18);
-    c.lineTo(18, 12);
-    c.lineTo(-18, 12);
+    c.moveTo(0, -radius * 0.5);
+    c.lineTo(radius * 0.5, radius / 3);
+    c.lineTo(-radius * 0.5, radius / 3);
     c.closePath();
     c.fill();
     c.shadowBlur = 0;
-    c.fillStyle = '#080b10';
-    c.fillRect(-38, 40, 76, 7);
-    c.fillStyle = color;
-    c.fillRect(-38, 40, 76 * Math.max(0, tower.hp / tower.maxHp), 7);
+    const gap = 4 * Math.sqrt(tower.size);
+    const barHeight = 5 * Math.sqrt(tower.size);
+    const barWidth = radius * 1.7;
+    const barY = -radius - gap - barHeight;
+    renderer.drawHealthBar(tower, -barWidth / 2, barY, barWidth, barHeight, color);
+    c.fillStyle = '#eef3f7';
+    c.font = `bold ${11 * Math.sqrt(tower.size)}px Segoe UI`;
+    c.textAlign = 'center';
+    c.textBaseline = 'bottom';
+    c.fillText(String(tower.hp), 0, barY - 3);
     c.restore();
   }
   for (const structure of [...game.board.turrets, ...game.board.towers]) {
@@ -701,31 +770,28 @@ function drawExtras() {
     c.lineWidth = 2;
     c.setLineDash([8, 7]);
     c.beginPath();
-    c.arc(structure.x, structure.y, structure.range, 0, Math.PI * 2);
+    c.arc(structure.x, structure.y, structure.range + structure.radius, 0, Math.PI * 2);
     c.stroke();
     c.setLineDash([]);
     c.restore();
   }
   c.restore();
 
-  for (const structure of [...game.board.turrets, ...game.board.towers]) {
-    if (structure.hp <= 0) continue;
-    const screen = { x: structure.x, y: structure.y };
-    c.save();
-    c.fillStyle = '#eef3f7';
-    c.font = 'bold 11px Segoe UI';
-    c.textAlign = 'center';
-    c.textBaseline = 'middle';
-    c.fillText(String(structure.hp), screen.x, screen.y + (structure.type === 'base' ? 56 : 51));
-    c.restore();
-  }
-
   c.save();
   for (const projectile of game.board.projectiles) {
     const target = projectile.targetUnit || projectile.targetPoint || projectile.to;
     if (!target) continue;
-    const x = projectile.from.x + (target.x - projectile.from.x) * projectile.progress,
-      y = projectile.from.y + (target.y - projectile.from.y) * projectile.progress;
+    const dx = target.x - projectile.from.x;
+    const dy = target.y - projectile.from.y;
+    const distance = Math.hypot(dx, dy) || 1;
+    const sourceRadius = projectile.source?.collisionRadius || projectile.source?.radius || 0;
+    const targetRadius = target.collisionRadius || target.radius || 0;
+    const startX = projectile.from.x + dx / distance * sourceRadius;
+    const startY = projectile.from.y + dy / distance * sourceRadius;
+    const endX = target.x - dx / distance * targetRadius;
+    const endY = target.y - dy / distance * targetRadius;
+    const x = startX + (endX - startX) * projectile.progress;
+    const y = startY + (endY - startY) * projectile.progress;
     c.save();
     c.fillStyle = projectile.abilityId ? '#c0afff' : '#ffd875';
     c.shadowColor = projectile.abilityId ? '#a08cff' : '#ffad66';
@@ -745,7 +811,7 @@ function drawExtras() {
     c.lineWidth = 3;
     c.setLineDash([7, 5]);
     c.beginPath();
-    c.arc(screenX, screenY, activeTroop.focus.type === 'base' ? 46 : 42, 0, Math.PI * 2);
+    c.arc(screenX, screenY, collisionRadiusOf(activeTroop.focus), 0, Math.PI * 2);
     c.stroke();
     c.setLineDash([]);
     c.restore();
@@ -766,7 +832,7 @@ function drawExtras() {
         c.strokeStyle = '#8be9ff99';
         c.setLineDash([6, 6]);
         c.beginPath();
-        c.arc(activeTroop.x, activeTroop.y, ability.castRange, 0, Math.PI * 2);
+        c.arc(activeTroop.x, activeTroop.y, ability.castRange + activeTroop.collisionRadius, 0, Math.PI * 2);
         c.stroke();
       }
       c.restore();
@@ -777,7 +843,7 @@ function drawExtras() {
         c.lineWidth = 2;
         c.setLineDash([6, 6]);
         c.beginPath();
-        c.arc(activeTroop.x, activeTroop.y, ability.targetRange, 0, Math.PI * 2);
+        c.arc(activeTroop.x, activeTroop.y, ability.targetRange + activeTroop.collisionRadius, 0, Math.PI * 2);
         c.stroke();
         c.restore();
       }
@@ -789,7 +855,7 @@ function drawExtras() {
         c.fillStyle = `${targetColor}22`;
         c.lineWidth = 3;
         c.beginPath();
-        c.arc(target.x, target.y, 27, 0, Math.PI * 2);
+        c.arc(target.x, target.y, collisionRadiusOf(target), 0, Math.PI * 2);
         c.fill();
         c.stroke();
         c.restore();
@@ -803,7 +869,7 @@ function drawExtras() {
         c.fillStyle = '#c0afff22';
         c.beginPath();
         c.moveTo(activeTroop.x, activeTroop.y);
-        c.arc(activeTroop.x, activeTroop.y, ability.range, center - halfArc, center + halfArc);
+        c.arc(activeTroop.x, activeTroop.y, ability.range + activeTroop.collisionRadius, center - halfArc, center + halfArc);
         c.closePath();
         c.fill();
         c.stroke();
@@ -813,7 +879,8 @@ function drawExtras() {
         const dx = hover.x - activeTroop.x;
         const dy = hover.y - activeTroop.y;
         const distance = Math.hypot(dx, dy);
-        const scale = ability.range && distance > ability.range ? ability.range / distance : 1;
+        const maxDistance = ability.range + activeTroop.collisionRadius;
+        const scale = ability.range && distance > maxDistance ? maxDistance / distance : 1;
         c.beginPath();
         c.moveTo(activeTroop.x, activeTroop.y);
         c.lineTo(activeTroop.x + dx * scale, activeTroop.y + dy * scale);
@@ -827,7 +894,7 @@ function drawExtras() {
         c.fillStyle = '#70f0a822';
         c.lineWidth = 3;
         c.beginPath();
-        c.arc(target.x, target.y, 27, 0, Math.PI * 2);
+        c.arc(target.x, target.y, collisionRadiusOf(target), 0, Math.PI * 2);
         c.fill();
         c.stroke();
         c.restore();
@@ -842,22 +909,58 @@ function drawExtras() {
       c.restore();
     }
   }
+  renderer.drawAttackAnimations(game);
+  renderer.drawDamageNumbers(game);
 }
 
 function renderUI() {
+  renderedPhase = game.phase;
   flushGameEvents();
+  draftPanel.render(game);
+  matchSummary.render(game);
   hud.update(game);
+  draftPanel.update(game);
   bottom.render(game, selectCard, activeTroop, showAbilityInfo, selectedRedraw);
+  updateDeploymentPreview();
   renderer.draw(game, hover, selectedMode);
   drawExtras();
   showTroopInspector();
 }
 
 $('endTurn').onclick = endTurn;
+$('surrender').onclick = () => {
+  if (!game.surrender()) return;
+  selectedCard = null;
+  selectedMode = 'select';
+  deploymentPreview = null;
+  activeTroop = null;
+  window.activeTroop = null;
+  redrawMode = false;
+  selectedRedraw = [];
+  $('redrawModal').classList.add('hidden');
+  renderUI();
+};
+$('arenaZoom').oninput = (event) => setArenaZoom(Number(event.target.value));
+$('zoomOut').onclick = () => setArenaZoom(Number($('arenaZoom').value) - 10);
+$('zoomIn').onclick = () => setArenaZoom(Number($('arenaZoom').value) + 10);
+$('zoomReset').onclick = () => setArenaZoom(100);
+function setArenaZoom(percent) {
+  const value = Math.max(65, Math.min(150, percent));
+  const zoom = value / 100;
+  const arena = document.querySelector('.arena-layout');
+  arena.style.setProperty('--arena-zoom', zoom);
+  arena.style.setProperty('--arena-stage-width', `${1560 * zoom}px`);
+  arena.style.setProperty('--arena-stage-height', `${570 * zoom}px`);
+  $('arenaZoom').value = value;
+  $('arenaZoomValue').value = `${value}%`;
+  $('arenaZoomValue').textContent = `${value}%`;
+}
+setArenaZoom(100);
 $('cancelAction').onclick = () => {
   if (game.isMoving()) return;
   selectedCard = null;
   selectedMode = 'select';
+  deploymentPreview = null;
   redrawMode = false;
   selectedRedraw = [];
   $('redrawModal').classList.add('hidden');
@@ -878,27 +981,17 @@ function openRedraw(resource) {
   const el = $('redrawModal');
   el.classList.remove('hidden');
   el.querySelector('strong').textContent =
-    `Discard abilities for 100 ${resource === 'elixir' ? 'Elixir' : 'AP'}`;
-  el.querySelector('span').textContent = 'Select up to 3 ability cards';
+    `Discard skills for 100 ${resource === 'elixir' ? 'Elixir' : 'AP'}`;
+  el.querySelector('span').textContent = 'Select up to 3 skill cards';
   renderUI();
 }
 
-const discardAp = document.createElement('button');
-discardAp.id = 'discardAp';
-discardAp.className = 'cancel-action';
-discardAp.textContent = 'REDRAW -100 AP';
-document.querySelector('.hand-dock').appendChild(discardAp);
-discardAp.onclick = () => openRedraw('ap');
-const discardEl = document.createElement('button');
-discardEl.id = 'discardElixir';
-discardEl.className = 'cancel-action';
-discardEl.textContent = 'REDRAW -100 ELIXIR';
-document.querySelector('.hand-dock').appendChild(discardEl);
-discardEl.onclick = () => openRedraw('elixir');
+$('discardAp').onclick = () => openRedraw('ap');
+$('discardElixir').onclick = () => openRedraw('elixir');
 $('confirmRedraw').onclick = () => {
   if (game.isMoving()) return;
   if (!selectedRedraw.length) {
-    toast('Select at least 1 ability card');
+    toast('Select at least 1 skill card');
     return;
   }
   if (game.discardAbilities(redrawResource, selectedRedraw)) toast(game.message);
@@ -930,6 +1023,7 @@ document.addEventListener('keydown', (e) => {
 
 let wasMoving = false;
 let lastTime = performance.now();
+let renderedPhase = game.phase;
 
 function loop(timestamp = performance.now()) {
   const dt = Math.max(0, Math.min((timestamp - lastTime) / 1000, 0.1));
@@ -943,6 +1037,12 @@ function loop(timestamp = performance.now()) {
   } else canvas.style.transform = '';
   flushGameEvents();
   hud.update(game);
+  const draftChanged = draftPanel.update(game);
+  if (renderedPhase !== game.phase) {
+    renderedPhase = game.phase;
+    renderUI();
+  }
+  else if (draftChanged) bottom.render(game, selectCard, activeTroop, showAbilityInfo, selectedRedraw);
 
   renderer.draw(game, hover, selectedMode);
   drawExtras();

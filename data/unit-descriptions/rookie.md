@@ -1,11 +1,11 @@
 # Rookie
 
-Rookie is a medium-speed long-range magical attacker (Musketeer reference): 553 HP, 50 armor/MR, 163.2 attack/sight range, 40.8 movement per turn, and 800 Elixir. He targets ground and air. Basic attacks no longer deal maximum-HP percentage damage. Each basic attack applies one mark; at three marks, the target becomes fragile for 6 global turn ends. Further Rookie attacks refresh the duration. While fragile, a target takes magic damage equal to 5% of its current HP whenever it receives a ranged attack, or 1% from any minion or summon attack. Magic resistance mitigates this damage.
+Rookie is an 800-Elixir long-range magical attacker with 553 HP, 50 armor and magic resistance, 163.2 attack and sight range, and 40.8 movement per turn. He targets ground and air. His basic attacks apply marks; at three marks, the target becomes fragile for six global turn ends and takes additional magic damage from ranged attacks.
 
 ## Abilities
 
-- **Overdrive** — self-targeted; increases AC generation by 50% for 8 global turn ends. The current 0 AP / 0 AC cost is a prototype placeholder.
-- **Momentum Shield** — directional; shields the first ally along the shot for 6 global turn ends. Movement while shielded accumulates displacement vectors, so continuing in one direction builds momentum while reversing direction reduces the net momentum. Momentum grants up to 50% bonus movement speed, reaching its cap at 272 net movement units. When the shield breaks or expires, it deals physical area damage within 54.4 units (2 arena tiles); raw damage equals 0.5 per momentum unit. Costs 250 AP.
-- **Rocket** — unit-targeted projectile against an enemy troop; deals 150% of Rookie's ATK as physical damage, applies a mark, and knocks the target back 144 units (20% less than before). The current target-selection range is 350 units. Costs 400 AP.
+- **Overdrive** — increase Rookie's AC generation by 50% for eight global turn ends. Costs 150 AP.
+- **Momentum Shield** — aim in a direction up to 163.2 units away to shield the first ally in the path for six global turn ends. Movement builds directional momentum and speed. When the shield ends or breaks, it deals physical area damage based on stored momentum. Stun, knock-up and knockback reset its buildup. Costs 200 AP.
+- **Rocket** — launch a homing projectile at an enemy troop within 170 units. It deals physical damage equal to 150% of ATK, applies a mark and knocks the target back. Costs 400 AP.
 
-Prototype values not specified by the design are the maximum movement-speed bonus and its momentum threshold, shield strength, burst damage per momentum unit, and Rocket target range.
+Balance values and ability details are sourced from [Rookie's stat module](../stats/rookie.js); this page summarizes them for players.

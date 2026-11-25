@@ -12,6 +12,7 @@ export class Hud {
     document.getElementById('redScore').textContent = `RED ${game.score[1]}`;
     const gameOver = game.winner !== null;
     document.querySelectorAll('button').forEach((button) => {
+      if (button.classList.contains('match-summary-close')) return;
       if (button.disabled !== gameOver) button.disabled = gameOver;
     });
     const squadCount = (team) => game.board.troopsFor(team).filter((troop) =>
@@ -24,7 +25,7 @@ export class Hud {
       b = game.board.troopsFor(1 - player.team).length;
     document.getElementById('controlValue').textContent =
       `${Math.round((a / (a + b || 1)) * 100)}%`;
-    document.getElementById('deckCount').textContent = player.deck.remaining;
-    document.getElementById('handCount').textContent = `${player.hand.cards.length} CARDS`;
+    document.getElementById('heroHandCount').textContent = `${player.heroHand.cards.length}/3`;
+    document.getElementById('abilityHandCount').textContent = `${player.abilityHand.cards.length}/9`;
   }
 }
