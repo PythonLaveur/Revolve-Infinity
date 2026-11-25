@@ -1,11 +1,13 @@
-// Balance source of truth for arena structures.
+import { GAME_PARAMS } from '../game_parameters.js';
+
+// Balance source of truth for arena structure combat stats.
 export const BASE_STATS = {
   aggro: 1,
   size: 3,
   hp: 2838,
   armor: 70,
   magicResist: 70,
-  range: 240,
+  range: 238,
   damage: 123,
 };
 export const TURRET_STATS = {
@@ -17,19 +19,33 @@ export const TURRET_STATS = {
   range: 210,
   damage: 153,
 };
+const {
+  width,
+  height,
+  kingTowerDepthFromEdge,
+  innerTurretDepthFromEdge,
+  outerTurretDepthFromEdge,
+  turretLaneOffsetY,
+} = GAME_PARAMS.arena;
+const laneYs = [height / 2 - turretLaneOffsetY, height / 2 + turretLaneOffsetY];
+const positionsForDepth = (depth, layer) =>
+  [0, 1].flatMap((team) =>
+    laneYs.map((y) => ({
+      team,
+      x: team === 0 ? depth : width - depth,
+      y,
+      ...(layer ? { layer } : {}),
+    })),
+  );
+
 export const STRUCTURE_LAYOUT = {
-  base: [
-    { team: 0, x: 135, y: 285 },
-    { team: 1, x: 1425, y: 285 },
-  ],
+  base: [0, 1].map((team) => ({
+    team,
+    x: team === 0 ? kingTowerDepthFromEdge : width - kingTowerDepthFromEdge,
+    y: height / 2,
+  })),
   turrets: [
-    { team: 0, x: 245, y: 143, layer: 'inner' },
-    { team: 0, x: 245, y: 427, layer: 'inner' },
-    { team: 0, x: 500, y: 143, layer: 'outer' },
-    { team: 0, x: 500, y: 427, layer: 'outer' },
-    { team: 1, x: 1315, y: 143, layer: 'inner' },
-    { team: 1, x: 1315, y: 427, layer: 'inner' },
-    { team: 1, x: 1060, y: 143, layer: 'outer' },
-    { team: 1, x: 1060, y: 427, layer: 'outer' },
+    ...positionsForDepth(innerTurretDepthFromEdge, 'inner'),
+    ...positionsForDepth(outerTurretDepthFromEdge, 'outer'),
   ],
 };

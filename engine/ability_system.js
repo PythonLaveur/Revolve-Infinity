@@ -87,6 +87,7 @@ export function cast(game, card, caster, x, y, target = null) {
         return false;
       }
     }
+    let summonPlacement = null;
     if (
       targeting === 'area' &&
       data.castRange &&
@@ -96,13 +97,16 @@ export function cast(game, card, caster, x, y, target = null) {
       return false;
     }
     if (targeting === 'area' && data.summonBuilding) {
-      const placement = game.findPlacementPosition(caster.team, x, y, { isBuilding: true });
-      if (!placement || (data.castRange && edgeDistanceBetween(caster, placement) > data.castRange)) {
+      // Validate with the summoned building's real footprint. A generic
+      // isBuilding placeholder can be much smaller than the actual summon.
+      const placementStats = caster.stats.foundryBuildings?.[data.summonBuilding] || { isBuilding: true };
+      summonPlacement = game.findPlacementPosition(caster.team, x, y, placementStats);
+      if (!summonPlacement || (data.castRange && edgeDistanceBetween(caster, summonPlacement) > data.castRange)) {
         game.message = 'Invalid building placement: arena edge, obstacle, or enemy deployment zone';
         return false;
       }
-      x = placement.x;
-      y = placement.y;
+      x = summonPlacement.x;
+      y = summonPlacement.y;
     }
     if (targeting === 'direction' && Math.hypot(x - caster.x, y - caster.y) < 1) {
       game.message = 'Choose a direction before casting';
@@ -124,7 +128,7 @@ export function cast(game, card, caster, x, y, target = null) {
       game.message = 'Troop was defeated by its bleed before casting';
       return false;
     }
-    const customCast = game.applyHeroHook(caster, 'castAbility', data, { x, y, target, teleportDestination, dashPath });
+    const customCast = game.applyHeroHook(caster, 'castAbility', data, { x, y, target, teleportDestination, dashPath, summonPlacement });
     if (customCast?.handled) {
       // Hero module handled this ability's unique targeting behavior.
     } else if (targeting === 'self') {

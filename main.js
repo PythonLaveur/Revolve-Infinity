@@ -4,10 +4,14 @@ import { Hud } from './ui/hud.js';
 import { BottomPanel } from './ui/bottom_panel.js';
 import { DraftPanel } from './ui/draft_panel.js';
 import { MatchSummary } from './ui/match_summary.js';
+import { StartMenu } from './ui/start_menu.js';
 import { applyResistance, scaleDamage } from './units/damage.js';
 import { collisionRadiusOf, edgeDistanceBetween } from './units/stats.js';
+import { GAME_PARAMS } from './data/game_parameters.js';
 
 const canvas = document.getElementById('battlefield');
+canvas.width = GAME_PARAMS.arena.width;
+canvas.height = GAME_PARAMS.arena.height;
 const renderer = new Renderer(canvas);
 const hud = new Hud();
 const bottom = new BottomPanel();
@@ -16,10 +20,18 @@ const draftPanel = new DraftPanel((heroId) => {
   if (game.chooseDraftHero(heroId)) renderUI();
 });
 const matchSummary = new MatchSummary();
+const startMenu = new StartMenu(document.getElementById('startMenu'), {
+  onAllRandom: () => {
+    if (game.startRandomMatch()) renderUI();
+  },
+  onDraft: () => {
+    if (game.startDraft()) renderUI();
+  },
+});
 let selectedCard = null,
   selectedMode = 'select',
   activeTroop = null,
-  hover = { x: 780, y: 285 },
+  hover = { x: GAME_PARAMS.arena.width / 2, y: GAME_PARAMS.arena.height / 2 },
   deploymentPreview = null;
 let redrawMode = false,
   redrawResource = 'elixir',
@@ -916,6 +928,7 @@ function drawExtras() {
 function renderUI() {
   renderedPhase = game.phase;
   flushGameEvents();
+  startMenu.render(game);
   draftPanel.render(game);
   matchSummary.render(game);
   hud.update(game);
@@ -949,8 +962,11 @@ function setArenaZoom(percent) {
   const zoom = value / 100;
   const arena = document.querySelector('.arena-layout');
   arena.style.setProperty('--arena-zoom', zoom);
-  arena.style.setProperty('--arena-stage-width', `${1560 * zoom}px`);
-  arena.style.setProperty('--arena-stage-height', `${570 * zoom}px`);
+  arena.style.setProperty('--arena-base-width', `${GAME_PARAMS.arena.width}px`);
+  arena.style.setProperty('--arena-base-height', `${GAME_PARAMS.arena.height}px`);
+  arena.style.setProperty('--arena-aspect-ratio', `${GAME_PARAMS.arena.width} / ${GAME_PARAMS.arena.height}`);
+  arena.style.setProperty('--arena-stage-width', `${GAME_PARAMS.arena.width * zoom}px`);
+  arena.style.setProperty('--arena-stage-height', `${GAME_PARAMS.arena.height * zoom}px`);
   $('arenaZoom').value = value;
   $('arenaZoomValue').value = `${value}%`;
   $('arenaZoomValue').textContent = `${value}%`;
@@ -970,7 +986,9 @@ $('cancelAction').onclick = () => {
 function openRedraw(resource) {
   if (game.isMoving() || game.winner !== null) return;
   const player = game.activePlayer();
-  const enough = resource === 'elixir' ? player.elixir >= 100 : player.ap >= 100;
+  const enough = resource === 'elixir'
+    ? player.elixir >= GAME_PARAMS.economy.redrawCost
+    : player.ap >= GAME_PARAMS.economy.redrawCost;
   if (!enough) {
     toast('Not enough resource');
     return;
@@ -1031,6 +1049,7 @@ function loop(timestamp = performance.now()) {
 
   const isMovingNow = game.isMoving();
   game.update(dt);
+  startMenu.render(game);
   if (game.shakeTimer > 0) {
     const amount = 10 * (game.shakeTimer / 2);
     canvas.style.transform = `translate(${(Math.random() - 0.5) * amount}px, ${(Math.random() - 0.5) * amount}px)`;

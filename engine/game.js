@@ -14,22 +14,23 @@ import { Draft } from './draft.js';
 import { CombatHistory } from './combat_history.js';
 import { loadHeroBehavior } from '../heroes/registry.js';
 import { applyResistance, scaleDamage } from '../units/damage.js';
+import { GAME_PARAMS } from '../data/game_parameters.js';
 
 
 export class Player {
   constructor(team) {
     this.team = team;
-    this.elixir = 1200;
-    this.ap = 0;
+    this.elixir = GAME_PARAMS.economy.startingElixir;
+    this.ap = GAME_PARAMS.economy.startingAP;
     this.heroDeck = new Deck([]);
     this.abilityDeck = new Deck([]);
-    this.heroHand = new Hand(this.heroDeck, 3);
-    this.abilityHand = new Hand(this.abilityDeck, 9);
+    this.heroHand = new Hand(this.heroDeck, GAME_PARAMS.hands.heroCards);
+    this.abilityHand = new Hand(this.abilityDeck, GAME_PARAMS.hands.abilityCards);
     this.units = [];
   }
   generate() {
-    this.elixir = Math.min(2000, this.elixir + 100);
-    this.ap = Math.min(2000, this.ap + 50);
+    this.elixir = Math.min(GAME_PARAMS.economy.maxElixir, this.elixir + GAME_PARAMS.economy.elixirPerTurn);
+    this.ap = Math.min(GAME_PARAMS.economy.maxAP, this.ap + GAME_PARAMS.economy.APPerTurn);
   }
 }
 
@@ -38,26 +39,10 @@ export class Game {
     this.stats = Object.fromEntries(TROOPS.map((t) => [t.id, new TroopStats(t)]));
     this.abilities = Object.fromEntries(ABILITIES.map((a) => [a.id, a]));
     this.players = [new Player(0), new Player(1)];
-    this.phase = 'draft';
+    this.phase = 'menu';
     this.draft = new Draft(TROOPS.map((hero) => hero.id), {
       onPick: (team, heroId) => this.addDraftedHero(team, heroId),
-      onComplete: () => {
-        Promise.allSettled(this.heroLoads.values()).then((results) => {
-          const failures = results.filter((result) => result.status === 'rejected');
-          for (const player of this.players) {
-            player.heroDeck.shuffle();
-            player.abilityDeck.shuffle();
-            player.heroHand.fill();
-            player.abilityHand.fill();
-          }
-          this.phase = 'battle';
-          this.turns.currentTeam = 0;
-          if (failures.length) {
-            console.error('Failed to load selected hero behavior modules:', failures.map((result) => result.reason));
-            this.addEvent(`${failures.length} hero behavior module(s) failed to load; the match will continue with generic behavior.`, null);
-          } else this.addEvent('Draft complete. Blue takes the first turn.', 0);
-        });
-      },
+      onComplete: () => this.finishHeroSetup('Draft complete. Blue takes the first turn.'),
     });
     this.board = new Board();
     this.board.game = this;
@@ -76,9 +61,60 @@ export class Game {
     this.meleeAttackAnimationIndex = 0;
     this.heroBehaviors = new Map();
     this.heroLoads = new Map();
+    this.loadingProgress = { loaded: 0, total: 0 };
   }
   teamName(team) {
     return team === 0 ? 'Blue' : 'Red';
+  }
+  startDraft() {
+    if (this.phase !== 'menu') return false;
+    this.phase = 'draft';
+    return true;
+  }
+  startRandomMatch(random = Math.random) {
+    if (this.phase !== 'menu') return false;
+    const pool = TROOPS.map((hero) => hero.id);
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    const teamSize = GAME_PARAMS.teamSize;
+    const selected = pool.slice(0, teamSize * 2);
+    for (let team = 0; team < 2; team++)
+      for (const heroId of selected.slice(team * teamSize, (team + 1) * teamSize))
+        this.addDraftedHero(team, heroId);
+    this.phase = 'loading';
+    this.finishHeroSetup('All Random match ready. Blue takes the first turn.');
+    return true;
+  }
+  finishHeroSetup(message) {
+    this.phase = 'loading';
+    const loadingStartedAt = Date.now();
+    const loads = [...this.heroLoads.values()];
+    this.loadingProgress = { loaded: 0, total: loads.length };
+    const trackedLoads = loads.map((load) => load.then(
+      (value) => { this.loadingProgress.loaded += 1; return value; },
+      (error) => { this.loadingProgress.loaded += 1; throw error; },
+    ));
+    Promise.allSettled(trackedLoads).then(async (results) => {
+      const minimumLoadingMs = 450;
+      const remainingLoadingMs = minimumLoadingMs - (Date.now() - loadingStartedAt);
+      if (remainingLoadingMs > 0)
+        await new Promise((resolve) => setTimeout(resolve, remainingLoadingMs));
+      const failures = results.filter((result) => result.status === 'rejected');
+      for (const player of this.players) {
+        player.heroDeck.shuffle();
+        player.abilityDeck.shuffle();
+        player.heroHand.fill();
+        player.abilityHand.fill();
+      }
+      this.phase = 'battle';
+      this.turns.currentTeam = 0;
+      if (failures.length) {
+        console.error('Failed to load selected hero behavior modules:', failures.map((result) => result.reason));
+        this.addEvent(`${failures.length} hero behavior module(s) failed to load; the match will continue with generic behavior.`, null);
+      } else this.addEvent(message, 0);
+    });
   }
   surrender(team = this.turns.currentTeam) {
     if (this.phase !== 'battle' || this.winner !== null) return false;
@@ -360,6 +396,7 @@ export class Game {
     return Boolean(this.beginningMovementQueue?.length) || this.board.troops.some((t) => t.isMoving());
   }
   update(dt) {
+    if (this.phase === 'menu' || this.phase === 'loading') return;
     if (this.phase === 'draft') {
       this.draft.tick(dt);
       return;
@@ -470,22 +507,24 @@ export class Game {
   discardAbilities(resource, cards = null) {
     if (this.winner !== null) return false;
     const player = this.activePlayer();
-    const enough = resource === 'elixir' ? player.elixir >= 100 : player.ap >= 100;
+    const enough = resource === 'elixir'
+      ? player.elixir >= GAME_PARAMS.economy.redrawCost
+      : player.ap >= GAME_PARAMS.economy.redrawCost;
     if (!enough) {
       this.message = 'Not enough resource';
       return false;
     }
     const count = cards
-      ? player.abilityHand.discardSelected(cards, 3)
-      : player.abilityHand.discardSelected(player.abilityHand.cards.slice(0, 3), 3);
+      ? player.abilityHand.discardSelected(cards, GAME_PARAMS.hands.redrawMax)
+      : player.abilityHand.discardSelected(player.abilityHand.cards.slice(0, GAME_PARAMS.hands.redrawMax), GAME_PARAMS.hands.redrawMax);
     if (!count) {
       this.message = 'No skill cards selected';
       return false;
     }
-    if (resource === 'elixir') player.elixir -= 100;
-    else player.ap -= 100;
+    if (resource === 'elixir') player.elixir -= GAME_PARAMS.economy.redrawCost;
+    else player.ap -= GAME_PARAMS.economy.redrawCost;
     const resourceName = resource === 'elixir' ? 'Elixir' : 'AP';
-    this.message = `Discarded ${count} skill card${count === 1 ? '' : 's'} (-100 ${resourceName})`;
+    this.message = `Discarded ${count} skill card${count === 1 ? '' : 's'} (-${GAME_PARAMS.economy.redrawCost} ${resourceName})`;
     return true;
   }
   deploy(card, x, y) {
@@ -510,7 +549,8 @@ export class Game {
       if (squadId) troop.squadId = squadId;
       return troop;
     });
-    for (const troop of troops) this.history.deployment(troop);
+    // A card deployment is one event even when it creates a multi-unit squad.
+    this.history.deployment(troops[0]);
     player.elixir -= card.elixirCost;
     player.heroHand.play(card);
     for (const troop of troops) this.addTroop(troop, { resolve: false });
@@ -580,13 +620,9 @@ export class Game {
       y + radius > river.y &&
       y - radius < river.y + river.h;
     if (inRiver) {
-      const onBridge = this.board.bridges.some(
-        (bridge) =>
-          x - radius >= bridge.x &&
-          x + radius <= bridge.x + bridge.w &&
-          y - radius >= bridge.y &&
-          y + radius <= bridge.y + bridge.h,
-      );
+      // A troop may use the bridge as soon as its center is on it. Requiring
+      // the full collision circle to fit blocked the approach from either bank.
+      const onBridge = this.isOnBridge(x, y);
       if (!onBridge) return true;
     }
     for (const turret of this.board.turrets) {
@@ -1096,7 +1132,9 @@ export class Game {
       const unit = entry.unit;
       if (!unit || unit.hp <= 0 || unit.burrowed || unit.stats.isBuilding || unit.isMoving()) continue;
       const isHero = Boolean(this.stats[unit.stats?.id]);
-      const budgetMs = isHero ? 5000 : 1000;
+      const budgetMs = isHero
+        ? GAME_PARAMS.movement.heroPathfindingBudgetMs
+        : GAME_PARAMS.movement.minionPathfindingBudgetMs;
       const deadline = (globalThis.performance?.now?.() ?? Date.now()) + budgetMs;
       const startX = unit.x;
       const startY = unit.y;

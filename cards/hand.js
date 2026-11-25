@@ -1,3 +1,5 @@
+import { GAME_PARAMS } from '../data/game_parameters.js';
+
 export class Hand {
   constructor(deck, size = 0) {
     this.cards = [];
@@ -24,7 +26,7 @@ export class Hand {
     this.deck.recycle(card);
     return true;
   }
-  discardSelected(cards, maxCount = 3) {
+  discardSelected(cards, maxCount = GAME_PARAMS.hands.redrawMax) {
     let count = 0;
     for (const card of cards) {
       if (card && this.cards.includes(card) && count < maxCount) {

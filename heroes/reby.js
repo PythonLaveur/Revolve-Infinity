@@ -1,6 +1,7 @@
 import { HERO_STATS } from '../data/stats/reby.js';
 export { HERO_STATS };
 import { Troop, aggroAdjustedDistance } from '../units/troop.js';
+import { collisionRadiusOf } from '../units/stats.js';
 import { applyResistance, scaleDamage } from '../units/damage.js';
 
 export const heroId = 'reby';
@@ -50,18 +51,25 @@ export function spawnRebyDrone(game, reby, target) {
 
 export function droneTarget(game, drone) {
 
-    const enemies = [
-      ...game.board.troops.filter((unit) => unit.team !== drone.team && unit.hp > 0 && !unit.burrowed),
-      ...game.board.turrets.filter((unit) => unit.team !== drone.team && unit.hp > 0),
-      ...game.board.towers.filter((unit) => unit.team !== drone.team && unit.hp > 0),
-    ];
-    if (!drone.droneTarget || drone.droneTarget.hp <= 0 || !enemies.includes(drone.droneTarget)) {
-      drone.droneTarget =
-        enemies
-          .filter((enemy) => enemy.hp > 0)
-          .sort((a, b) => aggroAdjustedDistance(drone, a) - aggroAdjustedDistance(drone, b))[0] || null;
+    const enemies = game.board.enemyTargets(drone.team);
+    if (drone.rushTarget && drone.rushTarget.hp > 0 && enemies.includes(drone.rushTarget)) {
+      drone.droneTarget = drone.rushTarget;
+      return drone.rushTarget;
     }
-    if (drone.droneTarget !== drone.rushTarget) {
+
+    const currentTargetIsValid = drone.droneTarget?.hp > 0 && enemies.includes(drone.droneTarget);
+    const visibleTargets = enemies.filter((enemy) =>
+      drone.canTarget(enemy) && drone.distanceToEdge(enemy) <= drone.sightRange,
+    );
+    const candidates = visibleTargets.length
+      ? visibleTargets
+      : currentTargetIsValid
+        ? [drone.droneTarget]
+        : enemies.filter((enemy) => drone.canTarget(enemy));
+    const nextTarget = candidates
+      .sort((a, b) => aggroAdjustedDistance(drone, a) - aggroAdjustedDistance(drone, b))[0] || null;
+    if (nextTarget !== drone.droneTarget) {
+      drone.droneTarget = nextTarget;
       drone.rushTarget = null;
       drone.isUntargetable = false;
     }
@@ -119,6 +127,29 @@ export function finishDroneMovement(game, drone) {
   
 }
 
+function startDroneRush(game, drone, target) {
+  if (!target || target.hp <= 0) return false;
+  drone.droneTarget = target;
+  drone.rushTarget = target;
+  drone.isUntargetable = true;
+  const dx = target.x - drone.x;
+  const dy = target.y - drone.y;
+  const distance = Math.hypot(dx, dy);
+  const detonationDistance = collisionRadiusOf(target) + drone.collisionRadius + 2;
+  if (distance <= detonationDistance) {
+    drone.detonateOnArrival = true;
+    finishDroneMovement(game, drone);
+    return true;
+  }
+  drone.facing = Math.atan2(dy, dx);
+  drone.waypoints = [{
+    x: target.x - (dx / distance) * detonationDistance,
+    y: target.y - (dy / distance) * detonationDistance,
+  }];
+  drone.detonateOnArrival = true;
+  return true;
+}
+
 export function planDroneMovement(game, drone) {
 
     const target = droneTarget(game, drone);
@@ -126,35 +157,61 @@ export function planDroneMovement(game, drone) {
       drone.hp = 0;
       return null;
     }
+    const targetRadius = collisionRadiusOf(target);
+    const detonationDistance = targetRadius + drone.collisionRadius + 2;
     const dx = target.x - drone.x;
     const dy = target.y - drone.y;
-    if (!drone.rushTarget && drone.distanceToEdge(target) <= drone.attackRange) {
-      drone.rushTarget = target;
-      drone.isUntargetable = true;
-    }
-    const committedTarget = drone.rushTarget || target;
-    const rushDx = committedTarget.x - drone.x;
-    const rushDy = committedTarget.y - drone.y;
-    const rushDistance = Math.hypot(rushDx, rushDy);
-    if (drone.distanceToEdge(committedTarget) <= 2) {
+    const distance = Math.hypot(dx, dy);
+    if (distance <= detonationDistance) {
       finishDroneMovement(game, drone);
       return null;
     }
-    const targetRadius = committedTarget.radius || committedTarget.collisionRadius || 0;
-    const detonationDistance = targetRadius + drone.collisionRadius + 2;
-    const moved = Math.min(drone.movementRemaining, Math.max(0, rushDistance - detonationDistance));
     const startX = drone.x;
     const startY = drone.y;
-    drone.facing = Math.atan2(rushDy, rushDx);
-    drone.x += (rushDx / rushDistance) * moved;
-    drone.y += (rushDy / rushDistance) * moved;
-    drone.movementRemaining -= moved;
-    drone.detonateOnArrival = rushDistance - moved <= detonationDistance;
-    return { startX, startY, waypoints: [{ x: drone.x, y: drone.y }] };
+    const direction = { x: dx / distance, y: dy / distance };
+    drone.facing = Math.atan2(direction.y, direction.x);
+    const edgeDistance = Math.max(0, distance - targetRadius - drone.collisionRadius);
+    const waypoints = [];
+
+    // Use the ordinary movement budget to approach attack range. If this
+    // step reaches the range threshold, append the fire-spirit style rush to
+    // the same movement plan instead of waiting for the next turn.
+    if (!drone.rushTarget && edgeDistance > drone.attackRange) {
+      const approach = Math.min(drone.movementRemaining, edgeDistance - drone.attackRange);
+      if (approach > 0) {
+        const approachPoint = {
+          x: drone.x + direction.x * approach,
+          y: drone.y + direction.y * approach,
+        };
+        waypoints.push(approachPoint);
+        drone.x = approachPoint.x;
+        drone.y = approachPoint.y;
+        drone.movementRemaining = Math.max(0, drone.movementRemaining - approach);
+      }
+      if (edgeDistance - approach > drone.attackRange + 0.01)
+        return waypoints.length ? { startX, startY, waypoints } : null;
+    }
+
+    drone.rushTarget = target;
+    drone.isUntargetable = drone.distanceToEdge(target) <= drone.attackRange;
+    const rushDistance = Math.hypot(target.x - drone.x, target.y - drone.y);
+    if (rushDistance <= detonationDistance) {
+      finishDroneMovement(game, drone);
+      return null;
+    }
+    const detonationPoint = {
+      x: target.x - ((target.x - drone.x) / rushDistance) * detonationDistance,
+      y: target.y - ((target.y - drone.y) / rushDistance) * detonationDistance,
+    };
+    waypoints.push(detonationPoint);
+    drone.x = detonationPoint.x;
+    drone.y = detonationPoint.y;
+    drone.detonateOnArrival = true;
+    return { startX, startY, waypoints };
   
 }
 
-export function summonBuilding(game, team, x, y, role, caster, ability) {
+export function summonBuilding(game, team, x, y, role, caster, ability, validatedPlacement = null) {
     const template = caster.stats.foundryBuildings[role];
     const stats = {
       ...template,
@@ -166,7 +223,7 @@ export function summonBuilding(game, team, x, y, role, caster, ability) {
       spawnedAtk: scaleDamage(caster.stats, ability.spawnedAtkScaling || {}),
       spawnedUnitStats: caster.stats.foundryUnits,
     };
-    const position = game.findPlacementPosition(team, x, y, stats);
+    const position = validatedPlacement || game.findPlacementPosition(team, x, y, stats);
     if (!position) return null;
     const building = new Troop(stats, team, position.x, position.y);
     building.summonedBy = caster;
@@ -177,12 +234,12 @@ export function summonBuilding(game, team, x, y, role, caster, ability) {
     return building;
   
 }
-export function placeSummonedBuilding(game, caster, ability, x, y) {
-  return summonBuilding(game, caster.team, x, y, ability.summonBuilding, caster, ability);
+export function placeSummonedBuilding(game, caster, ability, x, y, validatedPlacement = null) {
+  return summonBuilding(game, caster.team, x, y, ability.summonBuilding, caster, ability, validatedPlacement);
 }
 export function castAbility(game, caster, ability, context) {
   if (!ability.summonBuilding) return null;
-  placeSummonedBuilding(game, caster, ability, context.x, context.y);
+  placeSummonedBuilding(game, caster, ability, context.x, context.y, context.summonPlacement);
   return { handled: true };
 }
 
@@ -276,6 +333,15 @@ export function onFrameUpdate(game, drone, moveStep) {
   if (!drone.isDrone) return false;
   if (drone.hp > 0 && drone.isMoving()) {
     drone.updateMovement(moveStep);
+  }
+  if (drone.hp > 0) {
+    if (drone.rushTarget && drone.distanceToEdge(drone.rushTarget) <= drone.attackRange) {
+      drone.isUntargetable = true;
+    } else if (!drone.rushTarget) {
+      const target = droneTarget(game, drone);
+      if (target && drone.distanceToEdge(target) <= drone.attackRange)
+        startDroneRush(game, drone, target);
+    }
     if (!drone.isMoving() && drone.detonateOnArrival) finishDroneMovement(game, drone);
   }
   return true;

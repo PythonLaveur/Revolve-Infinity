@@ -5,13 +5,69 @@ const monotonicNow = () => globalThis.performance?.now?.() ?? Date.now();
 export function findPath(game, unit, target, stopWithinAttackRange = false, deadline = Infinity, gridStep = 20) {
 
     if (!target) return [];
-    const timedOut = () => deadline !== Infinity && monotonicNow() >= deadline;
-    if (timedOut()) return [];
-    const fineStep = Math.max(4, Math.min(8, Math.round(unit.collisionRadius * 0.2)));
+    const startedAt = monotonicNow();
+    const fineStep = Math.max(8, Math.min(12, Math.round(unit.collisionRadius * 0.35)));
     const adaptiveStep = Math.max(12, Math.min(20, Math.round(unit.collisionRadius * 0.6)));
     const step = gridStep === 20 ? adaptiveStep : gridStep,
       cols = Math.ceil(game.board.width / step),
       rows = Math.ceil(game.board.height / step);
+    const stageDeadline = deadline === Infinity || step <= fineStep
+      ? deadline
+      : startedAt + (deadline - startedAt) * 0.45;
+    const timedOut = () => stageDeadline !== Infinity && monotonicNow() >= stageDeadline;
+    let passableCount = 0;
+    let expandedCount = 0;
+    const targetName = target.stats?.name || target.name || target.type || (target.layer ? `${target.layer} turret` : 'arena structure');
+    const nearbyObstacles = () => [
+      ...game.board.turrets,
+      ...game.board.towers,
+      ...game.board.troops.filter((troop) => troop.stats?.isBuilding && troop.hp > 0),
+    ].map((obstacle) => ({
+      name: obstacle.stats?.name || obstacle.name || obstacle.type || (obstacle.layer ? `${obstacle.layer} turret` : 'building'),
+      distance: Math.round(Math.hypot(unit.x - obstacle.x, unit.y - obstacle.y)),
+      clearance: Math.round(Math.hypot(unit.x - obstacle.x, unit.y - obstacle.y) - unit.collisionRadius - (obstacle.radius || obstacle.collisionRadius || 0)),
+    })).sort((a, b) => a.clearance - b.clearance).slice(0, 6);
+    const recordStage = (reason) => game.recordMovementDiagnostic?.('pathfinding-detail', unit, {
+      reason,
+      target: targetName,
+      targetX: Math.round(target.x),
+      targetY: Math.round(target.y),
+      positionX: Math.round(unit.x),
+      positionY: Math.round(unit.y),
+      unitRadius: Math.round(unit.collisionRadius),
+      gridStep: step,
+      passableCells: passableCount,
+      exploredCells: expandedCount,
+      elapsedMs: Math.round(monotonicNow() - startedAt),
+      nearestObstacles: nearbyObstacles(),
+    });
+    const retryAtFineResolution = (reason = 'stage-timeout') => {
+      recordStage(reason);
+      return step > fineStep ? findPath(game, unit, target, stopWithinAttackRange, deadline, fineStep) : [];
+    };
+    if (timedOut()) return retryAtFineResolution();
+    const structureRadius = target.type === 'base' || target.layer ? target.radius : 0;
+    const approachDistance = structureRadius > 0
+      ? stopWithinAttackRange
+        ? structureRadius + unit.collisionRadius + Math.max(2, unit.attackRange - 4)
+        : Math.max(structureRadius + unit.collisionRadius + 2, structureRadius + unit.collisionRadius + unit.sightRange - 4)
+      : stopWithinAttackRange
+        ? unit.attackRange + unit.collisionRadius + (target.collisionRadius || RADIUS_PER_SIZE) - 1
+        : Math.max(2, unit.sightRange + unit.collisionRadius + (target.collisionRadius || RADIUS_PER_SIZE) - 4);
+    const targetDx = unit.x - target.x;
+    const targetDy = unit.y - target.y;
+    const targetDistance = Math.hypot(targetDx, targetDy);
+    if (targetDistance <= approachDistance) return [];
+    const goalDistance = Math.max(0, approachDistance - 1);
+    const directGoal = {
+      x: target.x + targetDx / targetDistance * goalDistance,
+      y: target.y + targetDy / targetDistance * goalDistance,
+    };
+    if (
+      directGoal.x >= unit.collisionRadius && directGoal.x <= game.board.width - unit.collisionRadius &&
+      directGoal.y >= unit.collisionRadius && directGoal.y <= game.board.height - unit.collisionRadius &&
+      game.isPathSegmentClear({ x: unit.x, y: unit.y }, directGoal, unit, game.board.troops)
+    ) return [{ x: unit.x, y: unit.y }, directGoal];
     const key = (x, y) => `${x},${y}`;
     // Dynamic units are pushed during physical movement. They must never turn
     // a valid terrain route into a false no-path result during planning.
@@ -22,10 +78,9 @@ export function findPath(game, unit, target, stopWithinAttackRange = false, dead
     };
     const cellIndex = (x, y) => y * cols + x;
     const passable = new Uint8Array(cols * rows);
-    const clearancePenalty = new Uint8Array(cols * rows);
     const movementType = unit.stats.movementType || 'ground';
     for (let y = 0; y < rows; y++) {
-      if (timedOut()) return [];
+      if (timedOut()) return retryAtFineResolution();
       for (let x = 0; x < cols; x++) {
         const worldX = x * step;
         const worldY = y * step;
@@ -36,12 +91,7 @@ export function findPath(game, unit, target, stopWithinAttackRange = false, dead
         ) {
           const index = cellIndex(x, y);
           passable[index] = 1;
-          clearancePenalty[index] = game.isBlockedByTerrain(
-            worldX,
-            worldY,
-            unit.collisionRadius + Math.min(2, step * 0.1),
-            movementType,
-          ) ? 1 : 0;
+          passableCount += 1;
         }
       }
     }
@@ -84,22 +134,13 @@ export function findPath(game, unit, target, stopWithinAttackRange = false, dead
       }
     }
     if (!start) {
-      if (gridStep > fineStep) return findPath(game, unit, target, stopWithinAttackRange, deadline, fineStep);
-      game.recordMovementDiagnostic?.('path-no-reachable-grid-start', unit, { gridStep: step, x: unit.x, y: unit.y });
+      if (step > fineStep) {
+        recordStage('no-reachable-grid-start-coarse');
+        return findPath(game, unit, target, stopWithinAttackRange, deadline, fineStep);
+      }
+      recordStage('no-reachable-grid-start');
       return [];
     }
-    const structureRadius = target.type === 'base' || target.layer ? target.radius : 0;
-    const approachDistance =
-      structureRadius > 0
-        ? stopWithinAttackRange
-          ? structureRadius + unit.collisionRadius + Math.max(2, unit.attackRange - 4)
-          : Math.max(
-              structureRadius + unit.collisionRadius + 2,
-              structureRadius + unit.collisionRadius + unit.sightRange - 4,
-            )
-        : stopWithinAttackRange
-          ? unit.attackRange + unit.collisionRadius + (target.collisionRadius || RADIUS_PER_SIZE) - 1
-          : Math.max(2, unit.sightRange + unit.collisionRadius + (target.collisionRadius || RADIUS_PER_SIZE) - 4);
     const directions = [
       [1, 0],
       [-1, 0],
@@ -150,8 +191,9 @@ export function findPath(game, unit, target, stopWithinAttackRange = false, dead
     push({ ...start, key: startKey, g: 0, f: heuristic(start.x, start.y) });
     let found = null;
     while (open.length) {
-      if (timedOut()) return [];
+      if (timedOut()) return retryAtFineResolution();
       const current = pop();
+      expandedCount += 1;
       if (current.g !== gScore.get(current.key)) continue;
       const reachedGoal =
         Math.hypot(target.x - current.x * step, target.y - current.y * step) <= approachDistance;
@@ -160,7 +202,7 @@ export function findPath(game, unit, target, stopWithinAttackRange = false, dead
         break;
       }
       for (const [dx, dy] of directions) {
-        if (timedOut()) return [];
+        if (timedOut()) return retryAtFineResolution();
         const nx = current.x + dx,
           ny = current.y + dy,
           nextKey = key(nx, ny);
@@ -174,7 +216,7 @@ export function findPath(game, unit, target, stopWithinAttackRange = false, dead
           currentPoint = { x: current.x * step, y: current.y * step },
           nextPoint = { x: wx, y: wy };
         if (!segmentClear(currentPoint, nextPoint)) continue;
-        const nextG = current.g + Math.hypot(dx, dy) + clearancePenalty[cellIndex(nx, ny)] * 0.025;
+        const nextG = current.g + Math.hypot(dx, dy);
         if (nextG >= (gScore.get(nextKey) ?? Infinity)) continue;
         gScore.set(nextKey, nextG);
         cameFrom.set(nextKey, current);
@@ -182,8 +224,11 @@ export function findPath(game, unit, target, stopWithinAttackRange = false, dead
       }
     }
     if (!found) {
-      if (gridStep > fineStep) return findPath(game, unit, target, stopWithinAttackRange, deadline, fineStep);
-      game.recordMovementDiagnostic?.('path-search-exhausted', unit, { gridStep: step, x: unit.x, y: unit.y, targetX: target.x, targetY: target.y });
+      if (step > fineStep) {
+        recordStage('search-exhausted-coarse');
+        return findPath(game, unit, target, stopWithinAttackRange, deadline, fineStep);
+      }
+      recordStage('search-exhausted');
       return [];
     }
     const gridPath = [];
@@ -200,14 +245,14 @@ export function findPath(game, unit, target, stopWithinAttackRange = false, dead
     const smoothed = [gridPath[0]];
     let anchor = 0;
     while (anchor < gridPath.length - 1) {
-      if (timedOut()) return [];
+      if (timedOut()) return retryAtFineResolution();
       let next = gridPath.length - 1;
       while (next > anchor && !game.isPathSegmentClear(gridPath[anchor], gridPath[next], unit, ignoredTroops)) {
-        if (timedOut()) return [];
+        if (timedOut()) return retryAtFineResolution();
         next -= 1;
       }
       if (next === anchor)
-        return gridStep > fineStep ? findPath(game, unit, target, stopWithinAttackRange, deadline, fineStep) : [];
+        return step > fineStep ? findPath(game, unit, target, stopWithinAttackRange, deadline, fineStep) : [];
       smoothed.push(gridPath[next]);
       anchor = next;
     }
@@ -232,160 +277,111 @@ export function isPathSegmentClear(game, from, to, unit, ignoredTroops = [unit])
 
 export function resolveDeploymentPushes(game, deployed = []) {
   const units = game.board.troops.filter((troop) => troop.hp > 0 && !troop.burrowed);
-  const deployedSet = new Set(deployed);
-  const displaced = new Set(deployed);
-  const canMove = (unit) => !unit.stats.isBuilding;
+  const contactChain = new Set(deployed);
   const legalPosition = (unit, x, y) =>
     x >= unit.collisionRadius &&
     x <= game.board.width - unit.collisionRadius &&
     y >= unit.collisionRadius &&
     y <= game.board.height - unit.collisionRadius &&
     !game.isBlockedByTerrain(x, y, unit.collisionRadius, unit.stats.movementType || 'ground');
-  const separatedPoint = (unit, other, preferredAngle) => {
-    const minDistance = unit.collisionRadius + other.collisionRadius + 0.5;
-    for (let step = 0; step < 24; step++) {
-      const turn = step === 0 ? 0 : Math.ceil(step / 2) * (step % 2 ? 1 : -1);
-      const angle = preferredAngle + turn * (Math.PI / 12);
-      const x = other.x + Math.cos(angle) * minDistance;
-      const y = other.y + Math.sin(angle) * minDistance;
-      if (legalPosition(unit, x, y)) return { x, y };
+  const canDisplaceTo = (unit, x, y) => legalPosition(unit, x, y) &&
+    game.isPathSegmentClear(
+      { x: unit.x, y: unit.y },
+      { x, y },
+      unit,
+      units,
+    );
+  const trySeparatePair = (a, b, normal, overlap) => {
+    const massA = Math.max(0.1, Number(a.stats.mass) || 1);
+    const massB = Math.max(0.1, Number(b.stats.mass) || 1);
+    const shareA = massB / (massA + massB);
+    const shareB = massA / (massA + massB);
+    const distance = overlap + 0.5;
+    const directions = [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6].map((turn) => {
+      const angle = Math.atan2(normal.y, normal.x) + turn * Math.PI / 12;
+      return { x: Math.cos(angle), y: Math.sin(angle) };
+    });
+    for (const direction of directions) {
+      const aFull = { x: a.x - direction.x * distance, y: a.y - direction.y * distance };
+      const bFull = { x: b.x + direction.x * distance, y: b.y + direction.y * distance };
+      const aCanMove = !a.stats.isBuilding && canDisplaceTo(a, aFull.x, aFull.y);
+      const bCanMove = !b.stats.isBuilding && canDisplaceTo(b, bFull.x, bFull.y);
+      if (!aCanMove && !bCanMove) continue;
+
+      let nextA;
+      let nextB;
+      if (aCanMove && bCanMove) {
+        const weightedA = { x: a.x - direction.x * distance * shareA, y: a.y - direction.y * distance * shareA };
+        const weightedB = { x: b.x + direction.x * distance * shareB, y: b.y + direction.y * distance * shareB };
+        const weightedACanMove = canDisplaceTo(a, weightedA.x, weightedA.y);
+        const weightedBCanMove = canDisplaceTo(b, weightedB.x, weightedB.y);
+        if (weightedACanMove && weightedBCanMove) {
+          nextA = weightedA;
+          nextB = weightedB;
+        } else if (weightedACanMove) {
+          nextA = aFull;
+          nextB = { x: b.x, y: b.y };
+          if (!canDisplaceTo(a, nextA.x, nextA.y)) continue;
+        } else if (weightedBCanMove) {
+          nextA = { x: a.x, y: a.y };
+          nextB = bFull;
+          if (!canDisplaceTo(b, nextB.x, nextB.y)) continue;
+        } else {
+          continue;
+        }
+      } else if (aCanMove) {
+        nextA = aFull;
+        nextB = { x: b.x, y: b.y };
+      } else {
+        nextA = { x: a.x, y: a.y };
+        nextB = bFull;
+      }
+      const changedA = Math.hypot(nextA.x - a.x, nextA.y - a.y) > 0.01;
+      const changedB = Math.hypot(nextB.x - b.x, nextB.y - b.y) > 0.01;
+      if (!changedA && !changedB) continue;
+      a.x = nextA.x;
+      a.y = nextA.y;
+      b.x = nextB.x;
+      b.y = nextB.y;
+      if (changedA) contactChain.add(a);
+      if (changedB) contactChain.add(b);
+      return true;
     }
-    return null;
+    return false;
   };
-  for (let pass = 0; pass < 14; pass++) {
+
+  // Propagate only through pairs that physically overlap after the prior
+  // correction. Units outside this contact graph are never moved.
+  for (let pass = 0; pass < Math.max(8, units.length * 2); pass++) {
     let changed = false;
     for (let i = 0; i < units.length; i++) {
       for (let j = i + 1; j < units.length; j++) {
         const a = units[i];
         const b = units[j];
         if ((a.stats.movementType || 'ground') !== (b.stats.movementType || 'ground')) continue;
-        if (!displaced.has(a) && !displaced.has(b)) continue;
+        if (!contactChain.has(a) && !contactChain.has(b)) continue;
         const dx = b.x - a.x;
         const dy = b.y - a.y;
         const distance = Math.hypot(dx, dy);
-        const minDistance = a.collisionRadius + b.collisionRadius;
-        if (distance >= minDistance) continue;
-        const angle = distance > 0.01
-          ? Math.atan2(dy, dx)
-          : (((a.team + b.team + i * 13 + j * 7) % 360) * Math.PI) / 180;
-        const aIsNew = deployedSet.has(a);
-        const bIsNew = deployedSet.has(b);
-        let first = a;
-        let firstAngle = angle + Math.PI;
-        let second = b;
-        let secondAngle = angle;
-        if (aIsNew && !bIsNew) {
-          first = b;
-          firstAngle = angle;
-          second = a;
-          secondAngle = angle + Math.PI;
-        } else if (bIsNew && !aIsNew) {
-          first = a;
-          firstAngle = angle + Math.PI;
-          second = b;
-          secondAngle = angle;
-        } else if (!displaced.has(a) && displaced.has(b)) {
-          first = a;
-          firstAngle = angle + Math.PI;
-          second = b;
-          secondAngle = angle;
-        } else if (displaced.has(a) && !displaced.has(b)) {
-          first = b;
-          firstAngle = angle;
-          second = a;
-          secondAngle = angle + Math.PI;
-        }
-        const push = (unit, other, direction) => {
-          if (!canMove(unit)) return false;
-          const point = separatedPoint(unit, other, direction);
-          if (!point) return false;
-          unit.x = point.x;
-          unit.y = point.y;
-          displaced.add(unit);
-          return true;
-        };
-        if (push(first, second, firstAngle) || push(second, first, secondAngle)) changed = true;
+        const minimum = a.collisionRadius + b.collisionRadius;
+        const overlap = minimum - distance;
+        if (overlap <= 0.01) continue;
+        const normal = distance > 0.01
+          ? { x: dx / distance, y: dy / distance }
+          : (() => {
+              const angle = ((a.team * 97 + i * 31 + j * 17) % 360) * Math.PI / 180;
+              return { x: Math.cos(angle), y: Math.sin(angle) };
+            })();
+        if (trySeparatePair(a, b, normal, overlap)) changed = true;
       }
     }
     if (!changed) break;
-  }
-  // If a crowd or terrain edge prevents the normal push chain, move the
-  // colliding troop to the nearest legal open position instead of leaving it
-  // intersecting another unit or structure.
-  const findOpenPosition = (unit) => {
-    if (!canMove(unit)) return null;
-    const step = Math.max(6, unit.collisionRadius * 0.75);
-    for (let distance = step; distance <= Math.max(game.board.width, game.board.height); distance += step) {
-      for (let i = 0; i < 32; i++) {
-        const angle = (Math.PI * 2 * i) / 32;
-        const x = unit.x + Math.cos(angle) * distance;
-        const y = unit.y + Math.sin(angle) * distance;
-        if (!legalPosition(unit, x, y)) continue;
-        if (units.some((other) => other !== unit &&
-          (other.stats.movementType || 'ground') === (unit.stats.movementType || 'ground') &&
-          Math.hypot(other.x - x, other.y - y) < unit.collisionRadius + other.collisionRadius)) continue;
-        return { x, y };
-      }
-    }
-    return null;
-  };
-  for (let pass = 0; pass < units.length; pass++) {
-    let overlap = null;
-    for (let i = 0; i < units.length && !overlap; i++) {
-      for (let j = i + 1; j < units.length; j++) {
-        const a = units[i];
-        const b = units[j];
-        if ((a.stats.movementType || 'ground') !== (b.stats.movementType || 'ground')) continue;
-        if (Math.hypot(a.x - b.x, a.y - b.y) < a.collisionRadius + b.collisionRadius) {
-          overlap = [a, b];
-          break;
-        }
-      }
-    }
-    if (!overlap) break;
-    const [a, b] = overlap;
-    const candidates = [a, b].sort((left, right) =>
-      Number(deployedSet.has(left)) - Number(deployedSet.has(right)) ||
-      Number(Boolean(left.stats.isBuilding)) - Number(Boolean(right.stats.isBuilding)));
-    let moved = false;
-    for (const unit of candidates) {
-      const point = findOpenPosition(unit);
-      if (!point) continue;
-      unit.x = point.x;
-      unit.y = point.y;
-      moved = true;
-      break;
-    }
-    if (!moved) break;
   }
 }
 
 export function resolveMovementCollisions(game, movedThisFrame = null, startPositions = null) {
   const units = game.board.troops.filter((troop) => troop.hp > 0 && !troop.burrowed);
-  const proposed = new Map(
-    [...(movedThisFrame || [])].map((unit) => [unit, { x: unit.x, y: unit.y }]),
-  );
-  const solved = solveCrowdDisplacements(game, units, startPositions, movedThisFrame);
-  if (solved !== false) return;
-
-  // A dense U-shaped crowd can make the linearized global constraints
-  // inconsistent for this frame. Preserve every individually safe path step,
-  // then use the established displacement resolver to separate contacts.
-  const safeMovers = [];
-  for (const [unit, candidate] of proposed) {
-    const start = startPositions?.get(unit);
-    if (!start || unit.stats.isBuilding) continue;
-    if (
-      !game.isPathSegmentClear(start, candidate, unit, units) ||
-      candidate.x < unit.collisionRadius || candidate.x > game.board.width - unit.collisionRadius ||
-      candidate.y < unit.collisionRadius || candidate.y > game.board.height - unit.collisionRadius ||
-      game.isBlockedByTerrain(candidate.x, candidate.y, unit.collisionRadius, unit.stats.movementType || 'ground')
-    ) continue;
-    unit.x = candidate.x;
-    unit.y = candidate.y;
-    safeMovers.push(unit);
-  }
-  if (safeMovers.length) resolveDeploymentPushes(game, safeMovers);
+  solveCrowdDisplacements(game, units, startPositions, movedThisFrame);
 }
 
 export function canMoveSegment(game, from, to, unit ) {

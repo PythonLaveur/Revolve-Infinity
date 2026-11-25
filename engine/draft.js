@@ -1,19 +1,9 @@
-const DRAFT_STEPS = [
-  { team: 1, kind: 'ban', count: 1 },
-  { team: 0, kind: 'ban', count: 2 },
-  { team: 1, kind: 'ban', count: 1 },
-  { team: 0, kind: 'pick', count: 1 },
-  { team: 1, kind: 'pick', count: 2 },
-  { team: 0, kind: 'pick', count: 2 },
-  { team: 1, kind: 'pick', count: 2 },
-  { team: 0, kind: 'pick', count: 2 },
-  { team: 1, kind: 'pick', count: 2 },
-  { team: 0, kind: 'pick', count: 2 },
-  { team: 1, kind: 'pick', count: 1 },
-];
+import { GAME_PARAMS } from '../data/game_parameters.js';
+
+const DRAFT_STEPS = GAME_PARAMS.draft.order;
 
 export class Draft {
-  constructor(heroIds, { onPick, onComplete, secondsPerPick = 15 } = {}) {
+  constructor(heroIds, { onPick, onComplete, secondsPerPick = GAME_PARAMS.draft.secondsPerChoice } = {}) {
     this.available = new Set(heroIds);
     this.banned = [];
     this.picks = [[], []];

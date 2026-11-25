@@ -1,4 +1,5 @@
 import { UNIT_ICON_URLS } from '../data/unit_icons.js';
+import { GAME_PARAMS } from '../data/game_parameters.js';
 
 export class DraftPanel {
   constructor(onChoose) {
@@ -48,9 +49,9 @@ export class DraftPanel {
       return `<span class="draft-ban-card" title="${hero.name}"><span class="draft-ban-icon" style="--hero:${hero.color}">${icon}<i></i></span><b>${hero.name}</b></span>`;
     };
     this.root.innerHTML = `<div class="draft-layout">
-      <aside class="draft-team draft-team-red"><header><small>RED TEAM</small><b>${draft.picks[1].length}/7</b></header><div class="draft-team-picks">${picks(1)}${'<div class="draft-empty-slot"></div>'.repeat(7 - draft.picks[1].length)}</div></aside>
+      <aside class="draft-team draft-team-red"><header><small>RED TEAM</small><b>${draft.picks[1].length}/${GAME_PARAMS.teamSize}</b></header><div class="draft-team-picks" style="--draft-team-size:${GAME_PARAMS.teamSize}">${picks(1)}${'<div class="draft-empty-slot"></div>'.repeat(Math.max(0, GAME_PARAMS.teamSize - draft.picks[1].length))}</div></aside>
       <section class="draft-center"><div class="draft-action"><small>HERO SELECT · ${draft.currentTeam === 1 ? 'RED' : 'BLUE'} ${draft.currentAction.toUpperCase()}</small><h1>${draft.complete ? 'ENTERING THE ARENA' : action}</h1><strong>${draft.complete ? '…' : `${Math.ceil(draft.remainingSeconds)}s`}</strong></div><div class="draft-roster">${[...draft.available].map(card).join('')}</div><div class="draft-footer"><button class="draft-confirm" disabled>${draft.currentAction === 'ban' ? 'CONFIRM BAN' : 'CONFIRM PICK'}</button><div class="draft-bans"><b>BANNED</b><div class="draft-ban-list">${draft.banned.map(bannedCard).join('') || '<span>—</span>'}</div></div></div><div class="draft-hero-modal hidden"></div></section>
-      <aside class="draft-team draft-team-blue"><header><small>BLUE TEAM</small><b>${draft.picks[0].length}/7</b></header><div class="draft-team-picks">${picks(0)}${'<div class="draft-empty-slot"></div>'.repeat(7 - draft.picks[0].length)}</div></aside>
+      <aside class="draft-team draft-team-blue"><header><small>BLUE TEAM</small><b>${draft.picks[0].length}/${GAME_PARAMS.teamSize}</b></header><div class="draft-team-picks" style="--draft-team-size:${GAME_PARAMS.teamSize}">${picks(0)}${'<div class="draft-empty-slot"></div>'.repeat(Math.max(0, GAME_PARAMS.teamSize - draft.picks[0].length))}</div></aside>
     </div>`;
     this.root.querySelectorAll('[data-hero]').forEach((button) => {
       const select = () => {

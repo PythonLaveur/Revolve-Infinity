@@ -19,4 +19,4 @@ Serve the project locally with `npm start` and open the displayed address in a b
 
 Hero and ability data is in `data/`; combat, movement, and presentation code is organized under `engine/`, `units/`, `heroes/`, and `ui/`.
 
-Hero balance values live in data/stats/, one file per hero. Hero mechanics live separately in heroes/. Arena base and turret values are in data/stats/turrets.js.
+Global match, economy, hand, draft, arena geometry and tower placement parameters live in data/game_parameters.js. Hero balance values live in data/stats/, one file per hero. Hero mechanics live separately in heroes/. Arena base and turret combat stats are in data/stats/turrets.js.

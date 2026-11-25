@@ -1,4 +1,6 @@
-export const ARENA_TILE_SIZE = 28;
+import { GAME_PARAMS } from '../data/game_parameters.js';
+
+export const ARENA_TILE_SIZE = GAME_PARAMS.arena.tileSize;
 export const RADIUS_PER_SIZE = ARENA_TILE_SIZE / 2;
 
 export function collisionRadiusOf(target) {

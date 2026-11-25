@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Revolve // Tactical MOBA</title>
+    <title>Re:creators Legends</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -86,6 +86,21 @@
         </aside>
       </footer>
     </main>
+
+    <section id="startMenu" class="start-menu hidden" aria-label="Start game">
+      <div class="start-menu-card">
+        <h1>Choose your game mode</h1>
+        <div class="start-menu-options">
+          <button id="startAllRandom" class="start-mode-button"><strong>ALL RANDOM</strong><span>Random teams from the full hero pool</span></button>
+          <button id="startDraft" class="start-mode-button"><strong>DRAFT</strong><span>Ban and pick your team</span></button>
+        </div>
+        <div class="start-menu-loading hidden" role="status">
+          <strong>Loading heroes…</strong>
+          <div class="start-loading-progress" role="progressbar" aria-label="Loading heroes" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>
+          <span class="start-loading-count">0 / 0 heroes loaded</span>
+        </div>
+      </div>
+    </section>
 
     <div id="toast" class="toast"></div>
     <section id="draftScreen" class="draft-screen" aria-label="Hero draft">
