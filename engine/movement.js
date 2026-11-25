@@ -2,24 +2,27 @@ import { RADIUS_PER_SIZE } from '../units/stats.js';
 import { solveCrowdDisplacements } from './crowd_solver.js';
 
 const monotonicNow = () => globalThis.performance?.now?.() ?? Date.now();
-export function findPath(game, unit, target, stopWithinAttackRange = false, deadline = Infinity) {
+export function findPath(game, unit, target, stopWithinAttackRange = false, deadline = Infinity, gridStep = 20) {
 
     if (!target) return [];
     const timedOut = () => deadline !== Infinity && monotonicNow() >= deadline;
     if (timedOut()) return [];
-    const step = 20,
+    const fineStep = Math.max(4, Math.min(8, Math.round(unit.collisionRadius * 0.2)));
+    const adaptiveStep = Math.max(12, Math.min(20, Math.round(unit.collisionRadius * 0.6)));
+    const step = gridStep === 20 ? adaptiveStep : gridStep,
       cols = Math.ceil(game.board.width / step),
       rows = Math.ceil(game.board.height / step);
     const key = (x, y) => `${x},${y}`;
     // Dynamic units are pushed during physical movement. They must never turn
     // a valid terrain route into a false no-path result during planning.
     const ignoredTroops = game.board.troops;
-    const start = {
+    const roundedStart = {
       x: Math.max(0, Math.min(cols - 1, Math.round(unit.x / step))),
       y: Math.max(0, Math.min(rows - 1, Math.round(unit.y / step))),
     };
     const cellIndex = (x, y) => y * cols + x;
     const passable = new Uint8Array(cols * rows);
+    const clearancePenalty = new Uint8Array(cols * rows);
     const movementType = unit.stats.movementType || 'ground';
     for (let y = 0; y < rows; y++) {
       if (timedOut()) return [];
@@ -30,10 +33,18 @@ export function findPath(game, unit, target, stopWithinAttackRange = false, dead
           worldX >= unit.collisionRadius && worldX <= game.board.width - unit.collisionRadius &&
           worldY >= unit.collisionRadius && worldY <= game.board.height - unit.collisionRadius &&
           !game.isBlockedByTerrain(worldX, worldY, unit.collisionRadius, movementType)
-        ) passable[cellIndex(x, y)] = 1;
+        ) {
+          const index = cellIndex(x, y);
+          passable[index] = 1;
+          clearancePenalty[index] = game.isBlockedByTerrain(
+            worldX,
+            worldY,
+            unit.collisionRadius + Math.min(2, step * 0.1),
+            movementType,
+          ) ? 1 : 0;
+        }
       }
     }
-    passable[cellIndex(start.x, start.y)] = 1;
     const segmentCache = new Map();
     const segmentClear = (from, to) => {
       const fromIndex = cellIndex(from.x / step, from.y / step);
@@ -43,6 +54,40 @@ export function findPath(game, unit, target, stopWithinAttackRange = false, dead
         segmentCache.set(cacheKey, game.isPathSegmentClear(from, to, unit, ignoredTroops));
       return segmentCache.get(cacheKey);
     };
+    // Rounding a legal position can put the grid start inside a tower/building
+    // clearance radius. Never force that blocked cell open; attach the search
+    // to the closest reachable passable cell instead.
+    let start = null;
+    const startCandidates = [];
+    const maxStartRadius = Math.max(cols, rows);
+    for (let radius = 0; radius <= maxStartRadius && !start; radius++) {
+      startCandidates.length = 0;
+      for (let y = Math.max(0, roundedStart.y - radius); y <= Math.min(rows - 1, roundedStart.y + radius); y++) {
+        for (let x = Math.max(0, roundedStart.x - radius); x <= Math.min(cols - 1, roundedStart.x + radius); x++) {
+          if (Math.max(Math.abs(x - roundedStart.x), Math.abs(y - roundedStart.y)) !== radius) continue;
+          if (!passable[cellIndex(x, y)]) continue;
+          const distance = Math.hypot(unit.x - x * step, unit.y - y * step);
+          startCandidates.push({ x, y, distance });
+        }
+      }
+      startCandidates.sort((a, b) => a.distance - b.distance);
+      for (const candidate of startCandidates) {
+        if (game.isPathSegmentClear(
+          { x: unit.x, y: unit.y },
+          { x: candidate.x * step, y: candidate.y * step },
+          unit,
+          ignoredTroops,
+        )) {
+          start = { x: candidate.x, y: candidate.y };
+          break;
+        }
+      }
+    }
+    if (!start) {
+      if (gridStep > fineStep) return findPath(game, unit, target, stopWithinAttackRange, deadline, fineStep);
+      game.recordMovementDiagnostic?.('path-no-reachable-grid-start', unit, { gridStep: step, x: unit.x, y: unit.y });
+      return [];
+    }
     const structureRadius = target.type === 'base' || target.layer ? target.radius : 0;
     const approachDistance =
       structureRadius > 0
@@ -129,14 +174,18 @@ export function findPath(game, unit, target, stopWithinAttackRange = false, dead
           currentPoint = { x: current.x * step, y: current.y * step },
           nextPoint = { x: wx, y: wy };
         if (!segmentClear(currentPoint, nextPoint)) continue;
-        const nextG = current.g + Math.hypot(dx, dy);
+        const nextG = current.g + Math.hypot(dx, dy) + clearancePenalty[cellIndex(nx, ny)] * 0.025;
         if (nextG >= (gScore.get(nextKey) ?? Infinity)) continue;
         gScore.set(nextKey, nextG);
         cameFrom.set(nextKey, current);
         push({ x: nx, y: ny, key: nextKey, g: nextG, f: nextG + heuristic(nx, ny) });
       }
     }
-    if (!found) return [];
+    if (!found) {
+      if (gridStep > fineStep) return findPath(game, unit, target, stopWithinAttackRange, deadline, fineStep);
+      game.recordMovementDiagnostic?.('path-search-exhausted', unit, { gridStep: step, x: unit.x, y: unit.y, targetX: target.x, targetY: target.y });
+      return [];
+    }
     const gridPath = [];
     let cursor = found;
     while (cursor) {
@@ -144,20 +193,21 @@ export function findPath(game, unit, target, stopWithinAttackRange = false, dead
       cursor = cameFrom.get(cursor.key);
     }
     gridPath.reverse();
-    gridPath[0] = { x: unit.x, y: unit.y };
+    if (Math.hypot(gridPath[0].x - unit.x, gridPath[0].y - unit.y) > 0.5)
+      gridPath.unshift({ x: unit.x, y: unit.y });
+    else gridPath[0] = { x: unit.x, y: unit.y };
 
     const smoothed = [gridPath[0]];
     let anchor = 0;
     while (anchor < gridPath.length - 1) {
       if (timedOut()) return [];
       let next = gridPath.length - 1;
-      while (
-        next > anchor + 1 &&
-        !game.isPathSegmentClear(gridPath[anchor], gridPath[next], unit, ignoredTroops)
-      ) {
+      while (next > anchor && !game.isPathSegmentClear(gridPath[anchor], gridPath[next], unit, ignoredTroops)) {
         if (timedOut()) return [];
         next -= 1;
       }
+      if (next === anchor)
+        return gridStep > fineStep ? findPath(game, unit, target, stopWithinAttackRange, deadline, fineStep) : [];
       smoothed.push(gridPath[next]);
       anchor = next;
     }
@@ -312,7 +362,30 @@ export function resolveDeploymentPushes(game, deployed = []) {
 
 export function resolveMovementCollisions(game, movedThisFrame = null, startPositions = null) {
   const units = game.board.troops.filter((troop) => troop.hp > 0 && !troop.burrowed);
-  solveCrowdDisplacements(game, units, startPositions, movedThisFrame);
+  const proposed = new Map(
+    [...(movedThisFrame || [])].map((unit) => [unit, { x: unit.x, y: unit.y }]),
+  );
+  const solved = solveCrowdDisplacements(game, units, startPositions, movedThisFrame);
+  if (solved !== false) return;
+
+  // A dense U-shaped crowd can make the linearized global constraints
+  // inconsistent for this frame. Preserve every individually safe path step,
+  // then use the established displacement resolver to separate contacts.
+  const safeMovers = [];
+  for (const [unit, candidate] of proposed) {
+    const start = startPositions?.get(unit);
+    if (!start || unit.stats.isBuilding) continue;
+    if (
+      !game.isPathSegmentClear(start, candidate, unit, units) ||
+      candidate.x < unit.collisionRadius || candidate.x > game.board.width - unit.collisionRadius ||
+      candidate.y < unit.collisionRadius || candidate.y > game.board.height - unit.collisionRadius ||
+      game.isBlockedByTerrain(candidate.x, candidate.y, unit.collisionRadius, unit.stats.movementType || 'ground')
+    ) continue;
+    unit.x = candidate.x;
+    unit.y = candidate.y;
+    safeMovers.push(unit);
+  }
+  if (safeMovers.length) resolveDeploymentPushes(game, safeMovers);
 }
 
 export function canMoveSegment(game, from, to, unit ) {

@@ -79,6 +79,16 @@ export function solveCrowdDisplacements(game, units, startPositions, movingUnits
   for (let i = 0; i < active.length; i++) {
     const unit = active[i];
     const p = startPositions?.get(unit) || { x: unit.x, y: unit.y };
+    const hasClearIntent = movingUnits?.has(unit) && game.isPathSegmentClear(
+      p,
+      { x: unit.x, y: unit.y },
+      unit,
+      units,
+    );
+    // A tangent half-space around a circle is conservative. It can forbid a
+    // perfectly clear curved route around a tower, so trust a clear pathfinder
+    // segment here and validate the final crowd-adjusted position below.
+    if (hasClearIntent) continue;
     for (let oi = 0; oi < obstacles.length; oi++) {
       const obstacle = obstacles[oi];
       if ((obstacle.stats?.movementType || 'ground') !== (unit.stats.movementType || 'ground')) continue;
@@ -167,14 +177,26 @@ export function solveCrowdDisplacements(game, units, startPositions, movingUnits
       const start = startPositions?.get(unit);
       if (start) { unit.x = start.x; unit.y = start.y; }
     }
-    return;
+    return false;
   }
   for (let i = 0; i < active.length; i++) {
     const unit = active[i];
     const start = startPositions?.get(unit) || { x: unit.x, y: unit.y };
-    unit.x = start.x + preferred[2 * i];
-    unit.y = start.y + preferred[2 * i + 1];
+    const candidate = { x: start.x + preferred[2 * i], y: start.y + preferred[2 * i + 1] };
+    if (
+      game.isPathSegmentClear(start, candidate, unit, units) &&
+      !game.isBlockedByTerrain(candidate.x, candidate.y, unit.collisionRadius, unit.stats.movementType || 'ground')
+    ) {
+      unit.x = candidate.x;
+      unit.y = candidate.y;
+    } else {
+      unit.x = start.x;
+      unit.y = start.y;
+      if (movingUnits?.has(unit))
+        game.recordMovementDiagnostic?.('crowd-solver-terrain-block', unit);
+    }
   }
   if (!converged && constraints.length)
     game.recordMovementDiagnostic?.('crowd-solver-iteration-limit', null, { constraints: constraints.length });
+  return true;
 }
