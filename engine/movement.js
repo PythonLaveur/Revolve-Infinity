@@ -1,4 +1,5 @@
 import { RADIUS_PER_SIZE } from '../units/stats.js';
+import { solveCrowdDisplacements } from './crowd_solver.js';
 
 const monotonicNow = () => globalThis.performance?.now?.() ?? Date.now();
 export function findPath(game, unit, target, stopWithinAttackRange = false, deadline = Infinity) {
@@ -309,107 +310,9 @@ export function resolveDeploymentPushes(game, deployed = []) {
   }
 }
 
-export function resolveMovementCollisions(game, movedThisFrame = null ) {
-
-    const units = game.board.troops.filter((troop) => troop.hp > 0 && !troop.burrowed);
-    // Only units that were already moving at frame start may drive a push.
-    // Units displaced by a push are passengers for this resolution, otherwise
-    // they can immediately push back in a later pair/pass and visibly oscillate.
-    const drivingUnits = new Set(movedThisFrame || units.filter((unit) => unit.isMoving()));
-    const legalPosition = (unit, x, y) =>
-      x >= unit.collisionRadius &&
-      x <= game.board.width - unit.collisionRadius &&
-      y >= unit.collisionRadius &&
-      y <= game.board.height - unit.collisionRadius &&
-      !game.isBlockedByTerrain(x, y, unit.collisionRadius, unit.stats.movementType || 'ground');
-    for (let pass = 0; pass < 5; pass++) {
-      for (let i = 0; i < units.length; i++) {
-        for (let j = i + 1; j < units.length; j++) {
-          const a = units[i],
-            b = units[j];
-          if ((a.stats.movementType || 'ground') !== (b.stats.movementType || 'ground')) continue;
-          if (!drivingUnits.has(a) && !drivingUnits.has(b)) continue;
-          let dx = b.x - a.x,
-            dy = b.y - a.y;
-          let distance = Math.hypot(dx, dy);
-          const minimum = a.collisionRadius + b.collisionRadius;
-          if (distance >= minimum) continue;
-          if (distance < 0.01) {
-            const angle = (((i * 31 + j * 17 + a.team * 53) % 360) * Math.PI) / 180;
-            dx = Math.cos(angle);
-            dy = Math.sin(angle);
-            distance = 1;
-          }
-          const nx = dx / distance,
-            ny = dy / distance;
-          const overlap = minimum - distance + 0.5;
-          // Force reduces effective resistance when a unit is voluntarily
-          // driving through another unit. Explicit ability knockback ignores it.
-          const massA = Math.max(0.1, a.stats.mass || 1) / (1 + Math.max(0, a.stats.force || 0) / 100),
-            massB = Math.max(0.1, b.stats.mass || 1) / (1 + Math.max(0, b.stats.force || 0) / 100);
-          const immovableA = a.stats.isBuilding,
-            immovableB = b.stats.isBuilding;
-          const shareA = immovableA ? 0 : immovableB ? 1 : massB / (massA + massB);
-          const shareB = immovableB ? 0 : immovableA ? 1 : massA / (massA + massB);
-          const placements = [
-            [
-              a.x - nx * overlap * shareA,
-              a.y - ny * overlap * shareA,
-              b.x + nx * overlap * shareB,
-              b.y + ny * overlap * shareB,
-            ],
-            [a.x - nx * overlap, a.y - ny * overlap, b.x, b.y],
-            [a.x, a.y, b.x + nx * overlap, b.y + ny * overlap],
-            [
-              a.x + ny * overlap * shareA,
-              a.y - nx * overlap * shareA,
-              b.x - ny * overlap * shareB,
-              b.y + nx * overlap * shareB,
-            ],
-            [
-              a.x - ny * overlap * shareA,
-              a.y + nx * overlap * shareA,
-              b.x + ny * overlap * shareB,
-              b.y - nx * overlap * shareB,
-            ],
-          ];
-          let separated = false;
-          for (const [ax, ay, bx, by] of placements) {
-            const aMoves = ax !== a.x || ay !== a.y;
-            const bMoves = bx !== b.x || by !== b.y;
-            if ((a.stats.isBuilding && aMoves) || (b.stats.isBuilding && bMoves)) continue;
-            if ((!aMoves || legalPosition(a, ax, ay)) && (!bMoves || legalPosition(b, bx, by))) {
-              a.x = ax;
-              a.y = ay;
-              b.x = bx;
-              b.y = by;
-              movedThisFrame?.add(a);
-              movedThisFrame?.add(b);
-              separated = true;
-              break;
-            }
-          }
-          // If the push chain meets terrain or a wall, shorten the active
-          // displacement by restoring contact instead of leaving an overlap.
-          if (!separated) {
-            const candidates = [];
-            if (!a.stats.isBuilding && drivingUnits.has(a))
-              candidates.push([a, a.x - nx * overlap, a.y - ny * overlap]);
-            if (!b.stats.isBuilding && drivingUnits.has(b))
-              candidates.push([b, b.x + nx * overlap, b.y + ny * overlap]);
-            for (const [unit, x, y] of candidates) {
-              if (legalPosition(unit, x, y)) {
-                unit.x = x;
-                unit.y = y;
-                separated = true;
-                break;
-              }
-            }
-          }
-        }
-      }
-    }
-  
+export function resolveMovementCollisions(game, movedThisFrame = null, startPositions = null) {
+  const units = game.board.troops.filter((troop) => troop.hp > 0 && !troop.burrowed);
+  solveCrowdDisplacements(game, units, startPositions, movedThisFrame);
 }
 
 export function canMoveSegment(game, from, to, unit ) {

@@ -377,6 +377,9 @@ export class Game {
       .filter((effect) => effect.remainingSeconds > 0);
     const moveStep = 280 * dt;
     const movedThisFrame = new Set();
+    const movementStartPositions = new Map(
+      this.board.troops.map((troop) => [troop, { x: troop.x, y: troop.y }]),
+    );
     for (const troop of this.board.troops) {
       troop.tickTimedEffects(dt);
       if (this.applyHeroHook(troop, 'onFrameUpdate', moveStep) === true) {
@@ -401,7 +404,7 @@ export class Game {
       }
     }
     try {
-      this.resolveMovementCollisions(movedThisFrame);
+      this.resolveMovementCollisions(movedThisFrame, movementStartPositions);
     } catch (error) {
       this.recordMovementDiagnostic('movement-collision-exception', null, { error: String(error?.stack || error) });
       console.error('Movement collision resolution failed:', error);
@@ -641,7 +644,9 @@ export class Game {
       return false;
     }
   }
-  resolveMovementCollisions(...args) { return resolveMovementCollisions(this, ...args); }
+  resolveMovementCollisions(movedThisFrame, startPositions) {
+    return resolveMovementCollisions(this, movedThisFrame, startPositions);
+  }
   canMoveSegment(...args) { return canMoveSegment(this, ...args); }
   move(unit, x, y) {
     if (this.winner !== null || this.phase !== 'battle') return false;
