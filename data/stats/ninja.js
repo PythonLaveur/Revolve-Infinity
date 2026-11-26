@@ -1,7 +1,7 @@
 // Balance source of truth for ninja.
 export const HERO_STATS = {
   id: 'ninja',
-  aggro: 0.8,
+  aggro: 0.8, preferredTargetTag: 'any', buildingDamageModifier: 1,
   size: 0.7,
   cloneSize: 0.5,
   name: 'Ninja',

@@ -2,7 +2,7 @@ import { cast, applyAbilityArea, applyAbilityToTarget, teleportDestination, dama
 import { findPath, isPathSegmentClear, resolveDeploymentPushes, resolveMovementCollisions, canMoveSegment, moveAutomatically } from './movement.js';
 import { TROOPS } from '../data/troops.js';
 import { ABILITIES } from '../data/abilities.js';
-import { collisionRadiusOf, edgeDistanceBetween, RADIUS_PER_SIZE, TroopStats } from '../units/stats.js';
+import { collisionRadiusOf, edgeDistanceBetween, isBuildingTarget, RADIUS_PER_SIZE, TroopStats } from '../units/stats.js';
 import { Troop, aggroAdjustedDistance } from '../units/troop.js';
 import { TroopCard } from '../cards/troop_card.js';
 import { AbilityCard } from '../cards/ability_card.js';
@@ -283,11 +283,13 @@ export class Game {
     }
   }
   applyDamage(target, amount, source = null, flags = {}) {
-    const incomingAmount = Math.max(0, amount || 0);
     const ranged = !flags.ignoreRanged && Boolean(flags.ranged);
     const damageResult = this.modifyIncomingDamage(target, amount, source, { ranged, flags });
     target = damageResult.target;
     amount = damageResult.amount;
+    if (isBuildingTarget(target))
+      amount *= source?.stats?.buildingDamageModifier ?? 1;
+    const incomingAmount = Math.max(0, amount || 0);
     if (!flags.skipDamageMitigationHooks && ranged) {
       for (const hero of damageResult.modifiers)
         this.applyHeroHook(hero, 'onDamageMitigated', amount, source);
@@ -1158,11 +1160,9 @@ export class Game {
         unit.validateFocus(allies);
         if (!unit.focus) unit.updateFocus(allies);
         if (!unit.focus) {
-          const visibleAllies = unit.eligibleTargets(allies)
-            .filter((ally) => ally.hp > 0 && unit.distanceToEdge(ally) <= unit.sightRange)
-            .sort((a, b) => aggroAdjustedDistance(unit, a) - aggroAdjustedDistance(unit, b));
-          if (visibleAllies.length) {
-            waypoints = this.moveAutomatically(unit, visibleAllies[0], true, allies, deadline);
+          const visibleAlly = unit.selectTarget(allies, { maxRange: unit.sightRange });
+          if (visibleAlly) {
+            waypoints = this.moveAutomatically(unit, visibleAlly, true, allies, deadline);
           } else {
             const enemyTurrets = this.board.turrets
               .filter((turret) => turret.team !== unit.team && turret.hp > 0)
@@ -1177,10 +1177,8 @@ export class Game {
         const enemies = this.board.enemyTargets(unit.team);
         unit.validateFocus(enemies);
         if (!unit.focus) {
-          let visible = unit.eligibleTargets(enemies)
-            .filter((enemy) => enemy.hp > 0 && unit.distanceToEdge(enemy) <= unit.sightRange)
-            .sort((a, b) => aggroAdjustedDistance(unit, a) - aggroAdjustedDistance(unit, b));
-          if (!visible.length) {
+          let visible = unit.selectTarget(enemies, { maxRange: unit.sightRange });
+          if (!visible) {
             const enemyTurrets = this.board.turrets
               .filter((turret) => turret.team !== unit.team && turret.hp > 0)
               .sort((a, b) => unit.distanceTo(a) - unit.distanceTo(b));
@@ -1188,15 +1186,11 @@ export class Game {
               (tower) => tower.team !== unit.team && tower.hp > 0,
             );
             waypoints = waypoints.concat(this.moveAutomatically(unit, target, false, enemies, deadline));
-            visible = unit.eligibleTargets(enemies)
-              .filter((enemy) => enemy.hp > 0 && unit.distanceToEdge(enemy) <= unit.sightRange)
-              .sort((a, b) => aggroAdjustedDistance(unit, a) - aggroAdjustedDistance(unit, b));
+            visible = unit.selectTarget(enemies, { maxRange: unit.sightRange });
           }
-          const hasAttackTarget = unit.eligibleTargets(enemies).some(
-            (enemy) => enemy.hp > 0 && unit.attackDistanceTo(enemy) <= unit.attackRange,
-          );
-          if (!unit.focus && visible.length && !hasAttackTarget)
-            waypoints = waypoints.concat(this.moveAutomatically(unit, visible[0], true, enemies, deadline));
+          const hasAttackTarget = Boolean(unit.selectTarget(enemies, { maxRange: unit.attackRange }));
+          if (!unit.focus && visible && !hasAttackTarget)
+            waypoints = waypoints.concat(this.moveAutomatically(unit, visible, true, enemies, deadline));
           unit.updateFocus(enemies);
         }
         if (unit.focus && unit.attackDistanceTo(unit.focus) > unit.attackRange)

@@ -1,6 +1,6 @@
 import { HERO_STATS } from '../data/stats/reby.js';
 export { HERO_STATS };
-import { Troop, aggroAdjustedDistance } from '../units/troop.js';
+import { Troop } from '../units/troop.js';
 import { collisionRadiusOf } from '../units/stats.js';
 import { applyResistance, scaleDamage } from '../units/damage.js';
 
@@ -57,17 +57,11 @@ export function droneTarget(game, drone) {
       return drone.rushTarget;
     }
 
-    const currentTargetIsValid = drone.droneTarget?.hp > 0 && enemies.includes(drone.droneTarget);
-    const visibleTargets = enemies.filter((enemy) =>
-      drone.canTarget(enemy) && drone.distanceToEdge(enemy) <= drone.sightRange,
-    );
-    const candidates = visibleTargets.length
-      ? visibleTargets
-      : currentTargetIsValid
-        ? [drone.droneTarget]
-        : enemies.filter((enemy) => drone.canTarget(enemy));
-    const nextTarget = candidates
-      .sort((a, b) => aggroAdjustedDistance(drone, a) - aggroAdjustedDistance(drone, b))[0] || null;
+    const nextTarget = drone.selectTarget(enemies, {
+      maxRange: drone.sightRange,
+      fallbackTarget: drone.droneTarget,
+      allowOutOfRangeFallback: true,
+    });
     if (nextTarget !== drone.droneTarget) {
       drone.droneTarget = nextTarget;
       drone.rushTarget = null;
@@ -252,10 +246,10 @@ export function spawnFoundryTroop(game, building) {
       atk: building.stats.spawnedAtk,
       color: building.team === 0 ? '#55e1dd' : '#ff6978',
     };
-    const enemy = game.board
-      .enemyTargets(building.team)
-      .filter((target) => target.hp > 0)
-      .sort((a, b) => aggroAdjustedDistance(building, a) - aggroAdjustedDistance(building, b))[0];
+    const enemy = building.selectTarget(game.board.enemyTargets(building.team), {
+      maxRange: building.sightRange,
+      allowOutOfRangeFallback: true,
+    });
     const angleToEnemy = enemy
       ? Math.atan2(enemy.y - building.y, enemy.x - building.x)
       : building.team === 0
@@ -309,10 +303,10 @@ export function onBuildingTurn(game, building) {
   if (building.stats.id !== heroId) return false;
   building.spawnTurns -= 1;
   if (building.spawnTurns <= 0) {
-    const target = game.board
-      .enemyTargets(building.team)
-      .filter((enemy) => enemy.hp > 0)
-      .sort((a, b) => aggroAdjustedDistance(building, a) - aggroAdjustedDistance(building, b))[0];
+    const target = building.selectTarget(game.board.enemyTargets(building.team), {
+      maxRange: building.sightRange,
+      allowOutOfRangeFallback: true,
+    });
     if (target) {
       const waveSize = building.stats.droneStats.waveSize;
       for (let i = 0; i < waveSize; i++) spawnRebyDrone(game, building, target);

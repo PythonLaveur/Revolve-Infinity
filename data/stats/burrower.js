@@ -1,7 +1,7 @@
 // Balance source of truth for burrower.
 export const HERO_STATS = {
   id: 'burrower',
-  aggro: 1,
+  aggro: 1, preferredTargetTag: 'any', buildingDamageModifier: 1,
   size: 1.5,
   name: 'Burrower',
   icon: 'D',

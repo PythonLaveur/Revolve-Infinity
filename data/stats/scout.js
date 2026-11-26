@@ -1,7 +1,7 @@
 // Balance source of truth for scout.
 export const HERO_STATS = {
   id: 'scout',
-  aggro: 1,
+  aggro: 1, preferredTargetTag: 'any', buildingDamageModifier: 1,
   size: 1,
   name: 'Scout',
   icon: 'S',

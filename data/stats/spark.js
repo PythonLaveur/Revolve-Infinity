@@ -1,7 +1,7 @@
 // Balance source of truth for spark.
 export const HERO_STATS = {
   id: 'spark',
-  aggro: 1,
+  aggro: 1, preferredTargetTag: 'any', buildingDamageModifier: 1,
   size: 1,
   name: 'Spark',
   icon: 'S',

@@ -1,7 +1,7 @@
 // Balance source of truth for sentinel.
 export const HERO_STATS = {
   id: 'sentinel',
-  aggro: 1,
+  aggro: 1, preferredTargetTag: 'any', buildingDamageModifier: 1,
   size: 1,
   name: 'Sentinel',
   icon: 'S',

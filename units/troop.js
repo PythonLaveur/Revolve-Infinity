@@ -1,5 +1,5 @@
 import { EffectSystem } from '../engine/effect_system.js';
-import { edgeDistanceBetween, RADIUS_PER_SIZE } from './stats.js';
+import { edgeDistanceBetween, isBuildingTarget, RADIUS_PER_SIZE } from './stats.js';
 
 let nextUnitId = 1;
 
@@ -102,17 +102,41 @@ export class Troop {
     const targetType = target.stats.movementType || 'ground';
     return (this.stats.attackTypes || ['ground']).includes(targetType);
   }
+  matchesPreferredTarget(target) {
+    const preferredType = this.stats.preferredTargetTag || 'any';
+    if (preferredType === 'building') return isBuildingTarget(target);
+    if (preferredType === 'units') return !isBuildingTarget(target);
+    return true;
+  }
   eligibleTargets(enemies) {
     if (this.stats.targetPreference === 'allies') {
       const allies = enemies.filter((unit) => unit.team === this.team && unit !== this && unit.hp > 0 && !unit.stats?.isBuilding);
       return allies.filter((unit) => unit.hp < unit.maxHp);
     }
     const attackable = enemies.filter((enemy) => this.canTarget(enemy));
-    if (this.stats.targetPreference !== 'structures') return attackable;
-    const structures = attackable.filter((enemy) => !enemy.stats && enemy.hp > 0);
-    return structures.some((structure) => this.distanceToEdge(structure) <= this.sightRange)
-      ? structures
-      : attackable.filter((enemy) => enemy.stats && enemy.hp > 0);
+    const preferredType = this.stats.preferredTargetTag || 'any';
+    if (preferredType === 'any') return attackable;
+    const preferred = attackable.filter((enemy) => this.matchesPreferredTarget(enemy));
+    return preferred.some((enemy) => this.distanceToEdge(enemy) <= this.sightRange)
+      ? preferred
+      : attackable;
+  }
+  selectTarget(enemies, {
+    maxRange = this.sightRange,
+    fallbackTarget = null,
+    allowOutOfRangeFallback = false,
+    preferredOnly = false,
+  } = {}) {
+    let candidates = this.eligibleTargets(enemies).filter((enemy) => enemy.hp > 0);
+    if (preferredOnly && (this.stats.preferredTargetTag || 'any') !== 'any')
+      candidates = candidates.filter((enemy) => this.matchesPreferredTarget(enemy));
+    const inRange = candidates.filter((enemy) => this.distanceToEdge(enemy) <= maxRange);
+    if (inRange.length) candidates = inRange;
+    else if (fallbackTarget && candidates.includes(fallbackTarget)) return fallbackTarget;
+    else if (!allowOutOfRangeFallback) return null;
+    return candidates.sort(
+      (a, b) => aggroAdjustedDistance(this, a) - aggroAdjustedDistance(this, b),
+    )[0] || null;
   }
   addEffect(effect) {
     return EffectSystem.apply(this, effect);
@@ -209,6 +233,7 @@ export class Troop {
     this.dashingTo = null;
   }
   validateFocus(enemies) {
+    const hadFocus = Boolean(this.focus);
     if (
       this.focus &&
       (!enemies.includes(this.focus) ||
@@ -217,6 +242,13 @@ export class Troop {
         !this.eligibleTargets(enemies).includes(this.focus))
     )
       this.focus = null;
+    const preferredType = this.stats.preferredTargetTag || 'any';
+    if (hadFocus && !this.focus && preferredType !== 'any') {
+      this.focus = this.selectTarget(enemies, {
+        maxRange: this.sightRange,
+        preferredOnly: true,
+      });
+    }
   }
   prepareEndTurn(enemies) {
     this.waypoints = [];
@@ -227,12 +259,7 @@ export class Troop {
   }
   updateFocus(enemies) {
     this.validateFocus(enemies);
-    if (!this.focus) {
-      const valid = this.eligibleTargets(enemies)
-        .filter((e) => e.hp > 0 && this.attackDistanceTo(e) <= this.attackRange)
-        .sort((a, b) => aggroAdjustedDistance(this, a) - aggroAdjustedDistance(this, b));
-      this.focus = valid[0] || null;
-    }
+    if (!this.focus) this.focus = this.selectTarget(enemies, { maxRange: this.attackRange });
   }
   distanceTo(other) {
     return Math.hypot(this.x - other.x, this.y - other.y);

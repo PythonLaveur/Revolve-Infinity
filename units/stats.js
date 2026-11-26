@@ -7,6 +7,13 @@ export function collisionRadiusOf(target) {
   return target?.radius ?? target?.collisionRadius ?? (target?.stats ? RADIUS_PER_SIZE : 0);
 }
 
+export function isBuildingTarget(target) {
+  return Boolean(
+    target &&
+    (target.stats?.isBuilding || target.isBuilding || target.layer || target.type === 'base' || !target.stats),
+  );
+}
+
 export function edgeDistanceBetween(source, target) {
   return Math.max(
     0,

@@ -1,39 +1,37 @@
 import { UNIT_ICON_IMAGES } from '../data/unit_icons.js';
-import { ARENA_TILE_SIZE, RADIUS_PER_SIZE } from '../units/stats.js';
+import { RADIUS_PER_SIZE } from '../units/stats.js';
+import { applyArenaTransform, arenaTransformScale } from './arena_coordinates.js';
 
 export class Renderer {
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
+    this.arenaBackground = new Image();
+    this.arenaBackground.src = new URL('../data/game-icons/rec_legends_arena_1512x560_narrow_river.png', import.meta.url).href;
   }
   draw(game, hover, selectedMode) {
     const c = this.ctx,
       w = this.canvas.width,
       h = this.canvas.height;
     c.clearRect(0, 0, w, h);
-    const g = c.createLinearGradient(0, 0, w, 0);
-    g.addColorStop(0, '#202a38');
-    g.addColorStop(0.5, '#18212c');
-    g.addColorStop(1, '#252c30');
-    c.fillStyle = g;
-    c.fillRect(0, 0, w, h);
-    c.strokeStyle = '#657184';
-    c.globalAlpha = 0.14;
-    c.lineWidth = 1;
-    for (let x = 0; x < w; x += ARENA_TILE_SIZE) {
-      c.beginPath();
-      c.moveTo(x, 0);
-      c.lineTo(x, h);
-      c.stroke();
+    if (this.arenaBackground.complete && this.arenaBackground.naturalWidth > 0) {
+      // Contain the full illustration without cropping its decorative border.
+      const scale = Math.min(w / this.arenaBackground.naturalWidth, h / this.arenaBackground.naturalHeight);
+      const imageWidth = this.arenaBackground.naturalWidth * scale;
+      const imageHeight = this.arenaBackground.naturalHeight * scale;
+      c.drawImage(
+        this.arenaBackground,
+        (w - imageWidth) / 2,
+        (h - imageHeight) / 2,
+        imageWidth,
+        imageHeight,
+      );
+    } else {
+      c.fillStyle = '#18212c';
+      c.fillRect(0, 0, w, h);
     }
-    for (let y = 0; y < h; y += ARENA_TILE_SIZE) {
-      c.beginPath();
-      c.moveTo(0, y);
-      c.lineTo(w, y);
-      c.stroke();
-    }
-    c.globalAlpha = 1;
     c.save();
+    applyArenaTransform(c, game.board.width, game.board.height);
     for (const patch of game.board.grassPatches) {
       c.fillStyle = patch.team === 0 ? '#70b85a45' : '#8dcc5545';
       c.strokeStyle = patch.team === 0 ? '#9de87988' : '#c2f28e88';
@@ -42,19 +40,6 @@ export class Renderer {
       c.arc(patch.x, patch.y, patch.radius, 0, Math.PI * 2);
       c.fill();
       c.stroke();
-    }
-    const river = game.board.river;
-    c.fillStyle = '#28779a';
-    c.fillRect(river.x, river.y, river.w, river.h);
-    c.fillStyle = '#5ec8df55';
-    for (let y = river.y + 12; y < river.y + river.h; y += 18)
-      c.fillRect(river.x + 8, y, river.w - 16, 3);
-    for (const bridge of game.board.bridges) {
-      c.fillStyle = '#c79b63';
-      c.fillRect(bridge.x, bridge.y, bridge.w, bridge.h);
-      c.strokeStyle = '#f1d29c';
-      c.lineWidth = 3;
-      c.strokeRect(bridge.x + 4, bridge.y + 4, bridge.w - 8, bridge.h - 8);
     }
     for (const structure of [...game.board.turrets, ...game.board.towers]) {
       if (structure.hp <= 0) continue;
@@ -123,6 +108,8 @@ export class Renderer {
     const c = this.ctx;
     c.save();
     c.translate(t.x, t.y);
+    const arenaScale = arenaTransformScale(this.canvas.width, this.canvas.height);
+    c.scale(1 / arenaScale.x, 1 / arenaScale.y);
     const color = t.team === 0 ? '#55e1dd' : '#ff6978';
     c.fillStyle = color;
     c.shadowColor = color;
@@ -156,6 +143,8 @@ export class Renderer {
     c.save();
     const airborne = t.effects.some((effect) => effect.type === 'airborne');
     c.translate(t.x, t.y - (airborne ? 25 * t.size : 0));
+    const arenaScale = arenaTransformScale(this.canvas.width, this.canvas.height);
+    c.scale(1 / arenaScale.x, 1 / arenaScale.y);
     c.scale(t.size, t.size);
     const color = t.team === 0 ? '#55e1dd' : '#ff6978';
     if (t.stats.movementType === 'air' || airborne) {
@@ -354,6 +343,9 @@ export class Renderer {
       const intensity = Math.max(0, Math.min(1, number.intensity));
       const rgb = vivid.map((channel, index) => Math.round(dull[index] + (channel - dull[index]) * intensity));
       c.save();
+      const arenaScale = arenaTransformScale(this.canvas.width, this.canvas.height);
+      c.translate(number.x, number.y);
+      c.scale(1 / arenaScale.x, 1 / arenaScale.y);
       c.globalAlpha = alpha;
       c.font = '900 17px Segoe UI, sans-serif';
       c.textAlign = 'center';
@@ -361,8 +353,8 @@ export class Renderer {
       c.lineWidth = 3;
       c.strokeStyle = '#11151dcc';
       const text = String(number.amount);
-      const textX = number.x + horizontal + (number.shield ? 7 : 0);
-      const textY = number.y + height;
+      const textX = horizontal + (number.shield ? 7 : 0);
+      const textY = height;
       c.strokeText(text, textX, textY);
       c.fillStyle = `rgb(${rgb.join(',')})`;
       c.fillText(text, textX, textY);

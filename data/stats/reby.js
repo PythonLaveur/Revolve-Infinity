@@ -1,7 +1,7 @@
 // Balance source of truth for reby.
 export const HERO_STATS = {
   id: 'reby',
-  aggro: 1,
+  aggro: 1, preferredTargetTag: 'any', buildingDamageModifier: 1,
   size: 2,
   droneStats: {
     id: 'reby_drone',

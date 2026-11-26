@@ -1,7 +1,7 @@
 // Balance source of truth for warden.
 export const HERO_STATS = {
   id: 'warden',
-  aggro: 1,
+  aggro: 1, preferredTargetTag: 'any', buildingDamageModifier: 1,
   size: 1,
   name: 'Warden',
   icon: 'W',

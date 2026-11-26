@@ -10,8 +10,7 @@
     <main class="game-shell">
       <header class="topbar">
         <div class="brand">
-          <span class="brand-mark">R</span>
-          <div><strong>REVOLVE</strong><small>TURN-BASED MOBA</small></div>
+          <div><strong>Re:creators Legends</strong></div>
         </div>
         <div class="round-status">
           <span id="turnLabel">BLUE TURN</span>
@@ -20,30 +19,18 @@
           </div>
           <div class="turn-track"><i id="turnProgress"></i></div>
         </div>
-        <button id="endTurn" class="end-turn">END TURN <span>↵</span></button>
       </header>
 
       <section class="arena-layout">
         <aside class="team-panel">
-          <div class="panel-title">YOUR SQUAD <span id="troopCount">0/7</span></div>
+          <div class="battle-log-heading blue-log-heading">BLUE BATTLE LOG</div>
+          <div class="battle-log blue" id="battleLogBlue" aria-label="Blue team event log"></div>
           <div id="squadList" class="squad-list"></div>
-          <div class="battle-log-heading red-log-heading">RED BATTLE LOG</div>
-          <div class="battle-log red" id="battleLogRed" aria-label="Red team event log"></div>
         </aside>
 
         <section class="battlefield-wrap">
           <div class="resource-row">
-            <div class="resource elixir">
-              <span class="resource-gem">◆</span>
-              <div><small>ELIXIR</small><strong id="elixirValue">1200</strong></div>
-            </div>
-            <div class="mid-objective">
-              <small>CONTROL</small><strong id="controlValue">50%</strong>
-            </div>
-            <div class="resource dark">
-              <span class="resource-gem">◆</span>
-              <div><small>APPROBATION POINTS</small><strong id="apValue">0</strong></div>
-            </div>
+            <button id="endTurn" class="end-turn">END TURN <span>↵</span></button>
             <div class="arena-zoom-controls" aria-label="Arena zoom controls">
               <button id="zoomOut" aria-label="Zoom out">−</button>
               <input id="arenaZoom" type="range" min="65" max="150" value="100" aria-label="Arena zoom" />
@@ -60,22 +47,35 @@
         </section>
 
         <aside class="enemy-panel">
-          <div class="panel-title enemy">ENEMY CORE <span id="enemyCount">0/7</span></div>
+          <div class="battle-log-heading red-log-heading">RED BATTLE LOG</div>
+          <div class="battle-log red" id="battleLogRed" aria-label="Red team event log"></div>
           <div id="enemyList" class="enemy-list"></div>
-          <div class="battle-log-heading blue-log-heading">BLUE BATTLE LOG</div>
-          <div class="battle-log blue" id="battleLogBlue" aria-label="Blue team event log"></div>
         </aside>
       </section>
 
       <footer class="hand-dock">
         <section class="hand-row hero-hand-row">
-          <div class="hand-row-label"><small>HEROES</small><strong id="heroHandCount">0/3</strong></div>
-          <div id="heroHand" class="hand hero-hand"></div>
+          <div class="hand-row-label"><small>HEROES</small></div>
+          <div class="hand-stack">
+            <div id="heroHand" class="hand hero-hand"></div>
+            <div class="resource-meter elixir-meter" role="meter" aria-label="Elixir" aria-valuemin="0" aria-valuemax="2000" aria-valuenow="1200">
+              <small>ELIXIR</small>
+              <div class="resource-track"><i id="elixirMeterFill"></i></div>
+              <div class="resource-drop"><strong id="elixirMeterValue">1200</strong></div>
+            </div>
+          </div>
           <div class="next-card-wrap"><small>NEXT HERO</small><div id="nextHeroCard"></div></div>
         </section>
         <section class="hand-row ability-hand-row">
-          <div class="hand-row-label"><small>SKILLS</small><strong id="abilityHandCount">0/9</strong></div>
-          <div id="abilityHand" class="hand ability-hand"></div>
+          <div class="hand-row-label"><small>SKILLS</small></div>
+          <div class="hand-stack">
+            <div id="abilityHand" class="hand ability-hand"></div>
+            <div class="resource-meter ap-meter" role="meter" aria-label="Approval points" aria-valuemin="0" aria-valuemax="2000" aria-valuenow="0">
+              <small>AP</small>
+              <div class="resource-track"><i id="apMeterFill"></i></div>
+              <div class="resource-drop"><strong id="apMeterValue">0</strong></div>
+            </div>
+          </div>
           <div class="next-card-wrap"><small>NEXT SKILL</small><div id="nextAbilityCard"></div></div>
         </section>
         <aside class="hand-controls">
@@ -114,6 +114,16 @@
       <strong>Discard skills</strong><span>Select up to 3 skill cards</span>
       <div>
         <button id="confirmRedraw">CONFIRM</button><button id="cancelRedraw">CANCEL</button>
+      </div>
+    </section>
+    <section id="surrenderModal" class="surrender-modal hidden" role="dialog" aria-modal="true" aria-labelledby="surrenderTitle">
+      <div class="surrender-dialog">
+        <strong id="surrenderTitle">Surrender this match?</strong>
+        <p>The opponent will win immediately.</p>
+        <div class="surrender-dialog-actions">
+          <button id="cancelSurrender" type="button">CANCEL</button>
+          <button id="confirmSurrender" type="button">SURRENDER</button>
+        </div>
       </div>
     </section>
     <script>

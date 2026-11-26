@@ -1,7 +1,7 @@
 // Balance source of truth for kaguya.
 export const HERO_STATS = {
     id: 'kaguya',
-    aggro: 1,
+    aggro: 1, preferredTargetTag: 'any', buildingDamageModifier: 1,
     size: 1,
     name: 'Kaguya',
     icon: 'K',

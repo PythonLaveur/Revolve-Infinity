@@ -1,7 +1,7 @@
 // Balance source of truth for hugo.
 export const HERO_STATS = {
   id: 'hugo',
-  aggro: 1,
+  aggro: 1, preferredTargetTag: 'building', buildingDamageModifier: 2,
   size: 2,
   name: 'Hugo',
   icon: 'H',
@@ -18,7 +18,6 @@ export const HERO_STATS = {
   sight: 204,
   attackTypes: ['ground'],
   basicAttack: { damageType: 'physical', scaling: { atk: 1.5 } },
-  targetPreference: 'structures',
   attackCost: 15,
   initialAC: 15,
   movement: 30.6,

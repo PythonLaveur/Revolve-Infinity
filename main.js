@@ -1,5 +1,6 @@
 import { Game } from './engine/game.js';
 import { Renderer } from './rendering/renderer.js';
+import { applyArenaTransform, arenaTransformScale, screenToArena } from './rendering/arena_coordinates.js';
 import { Hud } from './ui/hud.js';
 import { BottomPanel } from './ui/bottom_panel.js';
 import { DraftPanel } from './ui/draft_panel.js';
@@ -31,6 +32,7 @@ const startMenu = new StartMenu(document.getElementById('startMenu'), {
 let selectedCard = null,
   selectedMode = 'select',
   activeTroop = null,
+  activeStructure = null,
   hover = { x: GAME_PARAMS.arena.width / 2, y: GAME_PARAMS.arena.height / 2 },
   deploymentPreview = null;
 let redrawMode = false,
@@ -66,7 +68,7 @@ const fieldPoint = (e) => {
     x: ((e.clientX - r.left) * canvas.width) / r.width,
     y: ((e.clientY - r.top) * canvas.height) / r.height,
   };
-  return raw;
+  return screenToArena(raw, GAME_PARAMS.arena.width, GAME_PARAMS.arena.height);
 };
 function updateDeploymentPreview() {
   deploymentPreview = selectedMode === 'deploy' && selectedCard
@@ -87,6 +89,11 @@ function baseAt(p) {
     (t) => t.hp > 0 && t.team !== game.turns.currentTeam && Math.hypot(t.x - p.x, t.y - p.y) <= t.radius + 8,
   );
 }
+function structureAt(p) {
+  return [...game.board.turrets, ...game.board.towers].find(
+    (structure) => structure.hp > 0 && Math.hypot(structure.x - p.x, structure.y - p.y) <= structure.radius + 8,
+  );
+}
 
 function abilityTargetAt(p, ability, caster = activeTroop) {
   let target = troopAt(p);
@@ -105,8 +112,26 @@ function abilityTargetAt(p, ability, caster = activeTroop) {
 
 function showTroopInspector() {
   const el = $('troopInspector');
-  if (!activeTroop) {
+  if (!activeTroop && !activeStructure) {
     el.classList.add('hidden');
+    return;
+  }
+  if (activeStructure) {
+    const structure = activeStructure;
+    const structureName = structure.type === 'base'
+      ? 'King Tower'
+      : `${structure.layer || 'Arena'} Turret`;
+    const focusName = structure.focus?.stats?.name ||
+      (structure.focus?.layer ? `${structure.focus.layer} turret` : structure.focus?.type === 'base' ? 'King Tower' : structure.focus ? 'Unit' : 'None');
+    el.innerHTML = `<button class="inspector-close" id="closeInspector" aria-label="Close structure panel">×</button>
+      <div class="inspector-heading"><strong>${structureName}</strong><span class="troop-state">${structure.team === 0 ? 'BLUE' : 'RED'}</span><span class="troop-hp">HP <b>${structure.hp}/${structure.maxHp}</b></span></div>
+      <div class="inspector-metrics"><span>TYPE <b>${structure.type === 'base' ? 'KING TOWER' : 'TURRET'}</b></span><span>RANGE <b>${structure.range}</b></span><span>DAMAGE <b>${structure.damage}</b></span><span>ARMOR <b>${structure.armor}</b></span><span>MAGIC RESIST <b>${structure.magicResist}</b></span><span>SIZE <b>${structure.size}</b></span><span>AGGRO <b>${structure.aggro}</b></span></div>
+      <div class="inspector-abilities">FOCUS · ${focusName}</div>`;
+    el.classList.remove('hidden');
+    $('closeInspector').onclick = () => {
+      activeStructure = null;
+      el.classList.add('hidden');
+    };
     return;
   }
   const s = activeTroop.stats;
@@ -147,48 +172,84 @@ function showTroopInspector() {
     ? `<span>${s.resourceLabel.toUpperCase()} <b>${activeTroop.energy.toFixed(1)}${s.resourceMaximum ? `/${s.resourceMaximum}` : ''}</b></span>${s.resourceDecayGraceTurns !== undefined ? `<span>DECAY GRACE <b>${Math.max(0, s.resourceDecayGraceTurns - activeTroop.energyIdleTurns)} turns</b></span>` : ''}`
     : '';
   const isOwner = activeTroop.team === game.turns.currentTeam;
+  const controllable = isOwner && !activeTroop.isMinion && !activeTroop.isDrone && !activeTroop.isClone && !activeTroop.isSummon && !s.isMinion && !s.isSummon && !s.isBuilding;
+  const canMove = controllable && activeTroop.availableMovement > 0.01 && !activeTroop.stunned && !activeTroop.burrowed;
+  const eligibleTargets = activeTroop.eligibleTargets(game.targetsFor(activeTroop));
+  const hasTargetInRange = eligibleTargets.some((target) =>
+    target.hp > 0 && activeTroop.attackDistanceTo(target) <= activeTroop.attackRange,
+  );
+  const canAttack = controllable && !activeTroop.stunned && !activeTroop.burrowed &&
+    activeTroop.ac >= s.attackCost && hasTargetInRange;
+  const movementFill = s.movement > 0
+    ? Math.max(0, Math.min(100, (activeTroop.movementRemaining / s.movement) * 100))
+    : 0;
+  const focusedName = activeTroop.focus?.stats?.name ||
+    (activeTroop.focus?.layer ? `${activeTroop.focus.layer} turret` : activeTroop.focus?.type === 'base' ? 'King Tower' : activeTroop.focus ? 'Unit' : 'None');
+  const actions = controllable
+    ? `<div class="inspector-actions"><button id="inspectorMove" class="inspector-action move-action ${selectedMode === 'move' ? 'is-selected' : ''} ${canMove ? '' : 'no-budget'}" style="--movement-fill:${movementFill}%" ${!canMove ? 'disabled' : ''}><span>MOVE</span><small>${Math.round(activeTroop.availableMovement)} DIST</small></button><button id="inspectorAttack" class="inspector-action attack-action ${selectedMode === 'attack' ? 'is-selected' : ''} ${canAttack ? '' : 'no-budget'}" ${!canAttack ? 'disabled' : ''} title="${hasTargetInRange ? '' : 'No valid target in attack range'}"><span>ATTACK</span><small>${s.attackCost} AC · ${activeTroop.ac} LEFT</small></button></div>`
+    : '';
   el.innerHTML = `<button class="inspector-close" id="closeInspector" aria-label="Close troop panel">×</button>
     <div class="inspector-heading"><strong>${s.name}</strong><span class="troop-state ${activeTroop.stunned ? 'stunned' : ''}">${activeTroop.burrowed ? 'UNDERGROUND' : activeTroop.stunned ? 'STUNNED' : 'ACTIVE'}</span><span class="troop-hp">HP <b>${activeTroop.hp}/${activeTroop.maxHp}</b></span></div>
     <div class="inspector-metrics"><span>HP <b>${activeTroop.hp}/${activeTroop.maxHp}</b></span>${s.isBuilding ? '<span>TYPE <b>BUILDING</b></span><span>DECAY <b>Each turn</b></span>' : `<span>FORCE <b>${s.force}</b></span><span>ATTACK <b>${s.atk}</b></span><span>POWER <b>${s.apt}</b></span><span>ARMOR <b>${activeTroop.armor.toFixed(1)}</b></span><span>MAGIC RESIST <b>${activeTroop.magicResist.toFixed(1)}</b></span><span>RANGE <b>${activeTroop.attackRange}</b></span><span>SIGHT <b>${activeTroop.sightRange}</b></span><span>${s.movementType === 'air' ? 'FLY MOVE' : 'MOVE'} <b>${Math.round(activeTroop.availableMovement)}/${s.movement}</b></span>`}${s.flatArmorPen ? `<span>ARMOR PEN <b>${s.flatArmorPen}</b></span>` : ''}${resourceDisplay}<span>AC <b>${activeTroop.ac}</b></span></div>
-    <div class="inspector-abilities">ABILITIES · ${abilityNames}</div>
+    <div class="inspector-abilities">FOCUS · ${focusedName} &nbsp; · &nbsp; ABILITIES · ${abilityNames}</div>
     <div class="inspector-effects">EFFECTS · ${effectNames}</div>
-    <div class="inspector-actions"><button id="inspectorMove" class="inspector-action ${selectedMode === 'move' ? 'is-selected' : ''}" ${!isOwner || activeTroop.stunned || activeTroop.burrowed || s.isBuilding || activeTroop.isDrone ? 'disabled' : ''}>MOVE <small>${Math.round(activeTroop.availableMovement)} DIST</small></button><button id="inspectorAttack" class="inspector-action ${selectedMode === 'attack' ? 'is-selected' : ''}" ${!isOwner || activeTroop.stunned || activeTroop.burrowed || s.isBuilding || activeTroop.isDrone ? 'disabled' : ''}>ATTACK <small>${s.attackCost} AC</small></button></div>`;
+    ${actions}`;
   el.classList.remove('hidden');
   $('closeInspector').onclick = () => {
     el.classList.add('hidden');
     activeTroop = null;
+    activeStructure = null;
     window.activeTroop = null;
     selectedMode = 'select';
     renderUI();
   };
-  $('inspectorMove').onclick = () => {
-    if (game.isMoving() || !isOwner || activeTroop.stunned) return;
-    selectedMode = selectedMode === 'move' ? 'select' : 'move';
-    selectedCard = null;
-    renderUI();
-  };
-  $('inspectorAttack').onclick = () => {
-    if (game.isMoving() || !isOwner || activeTroop.stunned) return;
-    if (selectedMode === 'attack') {
-      selectedMode = 'select';
-    } else {
-      selectedMode = 'attack';
-      const enemies = game.targetsFor(activeTroop);
-      activeTroop.validateFocus(enemies);
-      if (!activeTroop.focus) activeTroop.updateFocus(enemies);
-      if (activeTroop.focus && activeTroop.attackDistanceTo(activeTroop.focus) <= activeTroop.attackRange) {
-        if (basicAttack()) selectedMode = 'select';
-      } else toast('Choose a target in attack range');
-    }
-    selectedCard = null;
-    renderUI();
-  };
+  if (controllable) {
+    $('inspectorMove').onclick = () => {
+      if (game.isMoving() || !isOwner || activeTroop.stunned) return;
+      selectedMode = selectedMode === 'move' ? 'select' : 'move';
+      selectedCard = null;
+      renderUI();
+    };
+    $('inspectorAttack').onclick = () => {
+      if (game.isMoving() || !isOwner || activeTroop.stunned) return;
+      if (selectedMode === 'attack') {
+        selectedMode = 'select';
+      } else {
+        selectedMode = 'attack';
+        const enemies = game.targetsFor(activeTroop);
+        activeTroop.validateFocus(enemies);
+        const eligible = activeTroop.eligibleTargets(enemies);
+        const currentFocusInRange = activeTroop.focus && eligible.includes(activeTroop.focus) &&
+          activeTroop.attackDistanceTo(activeTroop.focus) <= activeTroop.attackRange;
+        const target = currentFocusInRange
+          ? activeTroop.focus
+          : activeTroop.selectTarget(enemies, { maxRange: activeTroop.attackRange });
+        if (target) {
+          activeTroop.focus = target;
+          if (basicAttack(target)) selectedMode = 'select';
+        } else toast('Choose a target in attack range');
+      }
+      selectedCard = null;
+      renderUI();
+    };
+  }
 }
 
-function showAbilityInfo(card) {
-  const data = game.abilities[card.abilityId];
+function showCardInfo(card) {
   const el = $('abilityModal');
+  if (card.kind === 'troop') {
+    const hero = game.stats[card.troopId];
+    if (!hero) return;
+    const abilities = Object.values(game.abilities).filter((ability) => ability.troop === card.troopId);
+    el.classList.add('hero-card-modal');
+    el.innerHTML = `<button class="modal-close" id="closeAbilityModal">×</button><small>HERO CARD</small><h3>${hero.name}</h3><p>${hero.description || 'Hero card.'}</p><div><span>Elixir cost: ${hero.elixirCost}</span><span>HP: ${hero.hp}</span><span>Attack range: ${hero.range}</span><span>Sight range: ${hero.sight}</span></div><section class="hero-card-skills"><strong>SKILLS</strong>${abilities.map((ability) => `<article><b>${ability.name}</b><p>${ability.description || 'Hero ability.'}</p></article>`).join('')}</section>`;
+    el.classList.remove('hidden');
+    $('closeAbilityModal').onclick = () => el.classList.add('hidden');
+    return;
+  }
+  const data = game.abilities[card.abilityId];
   if (!data) return;
+  el.classList.remove('hero-card-modal');
   const owner = game.stats[data.troop];
   const scaleText = Object.entries(data.scaling || {})
     .filter(([, ratio]) => ratio)
@@ -306,6 +367,7 @@ function endTurn() {
   if (game.isMoving()) return;
   game.endTurn();
   activeTroop = null;
+  activeStructure = null;
   window.activeTroop = null;
   selectedCard = null;
   selectedMode = 'select';
@@ -373,6 +435,7 @@ canvas.onclick = (e) => {
     if (troop) {
       if (troop.isDrone) {
         activeTroop = troop;
+        activeStructure = null;
         window.activeTroop = troop;
         selectedMode = 'select';
         toast('Drones cannot be controlled');
@@ -381,8 +444,9 @@ canvas.onclick = (e) => {
         return;
       }
       if (troop.team === game.turns.currentTeam && troop.isClone) {
-        activeTroop = null;
-        window.activeTroop = null;
+        activeTroop = troop;
+        activeStructure = null;
+        window.activeTroop = troop;
         selectedMode = 'select';
         toast('Clones cannot be controlled');
         showTroopInspector();
@@ -390,19 +454,23 @@ canvas.onclick = (e) => {
         return;
       }
       activeTroop = troop;
+      activeStructure = null;
       window.activeTroop = troop;
       if (troop.team === game.turns.currentTeam) {
         activeTroop.validateFocus(game.targetsFor(activeTroop));
         if (!activeTroop.focus) activeTroop.updateFocus(game.targetsFor(activeTroop));
       }
     } else {
-      const structure = turretAt(p) || baseAt(p);
-      if (structure && activeTroop && !activeTroop.burrowed && activeTroop.team === game.turns.currentTeam) {
-        if (activeTroop.attackDistanceTo(structure) <= activeTroop.attackRange) {
-          activeTroop.focus = structure;
-        } else {
-          toast('Structure is outside attack range');
+      const structure = structureAt(p);
+      if (structure) {
+        if (activeTroop && activeTroop.team === game.turns.currentTeam && structure.team !== activeTroop.team) {
+          if (activeTroop.attackDistanceTo(structure) <= activeTroop.attackRange) activeTroop.focus = structure;
+          else toast('Structure is outside attack range');
         }
+        activeStructure = structure;
+        activeTroop = null;
+        window.activeTroop = null;
+        selectedMode = 'select';
       }
     }
   }
@@ -427,6 +495,7 @@ canvas.oncontextmenu = (e) => {
 function drawExtras() {
   const c = renderer.ctx;
   c.save();
+  applyArenaTransform(c, game.board.width, game.board.height);
   if (deploymentPreview && selectedCard) {
     const color = deploymentPreview.valid ? '#78f0ac' : '#ff6978';
     const radius = game.collisionRadiusForStats(game.stats[selectedCard.troopId]);
@@ -454,17 +523,29 @@ function drawExtras() {
     c.restore();
   }
   if (activeTroop && activeTroop.hp > 0 && !activeTroop.burrowed) {
-    c.lineWidth = 2;
-    c.setLineDash([7, 6]);
-    c.strokeStyle = '#f5f7fa99';
+    c.lineWidth = 3;
+    c.setLineDash([9, 5]);
+    c.strokeStyle = '#bafaffee';
     c.beginPath();
     c.arc(activeTroop.x, activeTroop.y, activeTroop.sightRange + activeTroop.collisionRadius, 0, Math.PI * 2);
     c.stroke();
-    c.strokeStyle = '#f4d35ecc';
+    c.strokeStyle = '#ffe36bff';
     c.beginPath();
     c.arc(activeTroop.x, activeTroop.y, activeTroop.attackRange + activeTroop.collisionRadius, 0, Math.PI * 2);
     c.stroke();
     c.setLineDash([]);
+  }
+  if (activeStructure && activeStructure.hp > 0) {
+    c.save();
+    c.lineWidth = 4;
+    c.setLineDash([10, 5]);
+    c.strokeStyle = activeStructure.team === 0 ? '#8ffaff' : '#ff9aa4';
+    c.shadowColor = c.strokeStyle;
+    c.shadowBlur = 10;
+    c.beginPath();
+    c.arc(activeStructure.x, activeStructure.y, activeStructure.range + activeStructure.radius, 0, Math.PI * 2);
+    c.stroke();
+    c.restore();
   }
   for (const terrain of game.board.terrains) {
     c.save();
@@ -716,6 +797,8 @@ function drawExtras() {
     if (turret.hp <= 0) continue;
     c.save();
     c.translate(turret.x, turret.y);
+    const arenaScale = arenaTransformScale(game.board.width, game.board.height);
+    c.scale(1 / arenaScale.x, 1 / arenaScale.y);
     const radius = turret.radius;
     const sizeScale = radius / 27;
     const color = turret.team === 0 ? '#55e1dd' : '#ff6978';
@@ -747,6 +830,8 @@ function drawExtras() {
     if (tower.hp <= 0) continue;
     c.save();
     c.translate(tower.x, tower.y);
+    const arenaScale = arenaTransformScale(game.board.width, game.board.height);
+    c.scale(1 / arenaScale.x, 1 / arenaScale.y);
     const color = tower.team === 0 ? '#55e1dd' : '#ff6978';
     const radius = tower.radius;
     c.fillStyle = color;
@@ -790,6 +875,7 @@ function drawExtras() {
   c.restore();
 
   c.save();
+  applyArenaTransform(c, game.board.width, game.board.height);
   for (const projectile of game.board.projectiles) {
     const target = projectile.targetUnit || projectile.targetPoint || projectile.to;
     if (!target) continue;
@@ -815,6 +901,8 @@ function drawExtras() {
   }
   c.restore();
 
+  c.save();
+  applyArenaTransform(c, game.board.width, game.board.height);
   if (activeTroop && !activeTroop.burrowed && activeTroop.focus) {
     const screenX = activeTroop.focus.x;
     const screenY = activeTroop.focus.y;
@@ -921,8 +1009,13 @@ function drawExtras() {
       c.restore();
     }
   }
+  c.restore();
+
+  c.save();
+  applyArenaTransform(c, game.board.width, game.board.height);
   renderer.drawAttackAnimations(game);
   renderer.drawDamageNumbers(game);
+  c.restore();
 }
 
 function renderUI() {
@@ -933,7 +1026,7 @@ function renderUI() {
   matchSummary.render(game);
   hud.update(game);
   draftPanel.update(game);
-  bottom.render(game, selectCard, activeTroop, showAbilityInfo, selectedRedraw);
+  bottom.render(game, selectCard, activeTroop, showCardInfo, selectedRedraw);
   updateDeploymentPreview();
   renderer.draw(game, hover, selectedMode);
   drawExtras();
@@ -941,18 +1034,23 @@ function renderUI() {
 }
 
 $('endTurn').onclick = endTurn;
-$('surrender').onclick = () => {
+const completeSurrender = () => {
+  $('surrenderModal').classList.add('hidden');
   if (!game.surrender()) return;
   selectedCard = null;
   selectedMode = 'select';
   deploymentPreview = null;
   activeTroop = null;
+  activeStructure = null;
   window.activeTroop = null;
   redrawMode = false;
   selectedRedraw = [];
   $('redrawModal').classList.add('hidden');
   renderUI();
 };
+$('surrender').onclick = () => $('surrenderModal').classList.remove('hidden');
+$('cancelSurrender').onclick = () => $('surrenderModal').classList.add('hidden');
+$('confirmSurrender').onclick = completeSurrender;
 $('arenaZoom').oninput = (event) => setArenaZoom(Number(event.target.value));
 $('zoomOut').onclick = () => setArenaZoom(Number($('arenaZoom').value) - 10);
 $('zoomIn').onclick = () => setArenaZoom(Number($('arenaZoom').value) + 10);
@@ -1027,12 +1125,17 @@ $('cancelRedraw').onclick = () => {
 };
 
 document.addEventListener('keydown', (e) => {
+  if (!$('surrenderModal').classList.contains('hidden')) {
+    if (e.key === 'Escape') $('surrenderModal').classList.add('hidden');
+    return;
+  }
   if (game.isMoving() || game.winner !== null) return;
   if (e.key === 'Enter' && !redrawMode) endTurn();
   if (e.key === 'Escape') {
     $('abilityModal').classList.add('hidden');
     $('troopInspector').classList.add('hidden');
     $('redrawModal').classList.add('hidden');
+    $('surrenderModal').classList.add('hidden');
     redrawMode = false;
     selectedRedraw = [];
     renderUI();
@@ -1061,7 +1164,7 @@ function loop(timestamp = performance.now()) {
     renderedPhase = game.phase;
     renderUI();
   }
-  else if (draftChanged) bottom.render(game, selectCard, activeTroop, showAbilityInfo, selectedRedraw);
+  else if (draftChanged) bottom.render(game, selectCard, activeTroop, showCardInfo, selectedRedraw);
 
   renderer.draw(game, hover, selectedMode);
   drawExtras();

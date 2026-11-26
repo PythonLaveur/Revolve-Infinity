@@ -1,7 +1,7 @@
 // Balance source of truth for rayka.
 export const HERO_STATS = {
   id: 'rayka',
-  aggro: 1,
+  aggro: 1, preferredTargetTag: 'units', buildingDamageModifier: 1,
   size: 2,
   name: 'Rayka',
   icon: 'Y',

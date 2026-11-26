@@ -1,7 +1,7 @@
 // Balance source of truth for duelist.
 export const HERO_STATS = {
   id: 'duelist',
-  aggro: 1,
+  aggro: 1, preferredTargetTag: 'any', buildingDamageModifier: 1,
   size: 1,
   name: 'Duelist',
   icon: 'D',
