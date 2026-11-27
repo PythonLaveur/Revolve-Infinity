@@ -7,7 +7,8 @@ export const BASE_STATS = {
   hp: 2838,
   armor: 70,
   magicResist: 70,
-  range: 238,
+  range: 224,
+  inhibitionRangeMultiplier: 1.1,
   damage: 123,
 };
 export const TURRET_STATS = {
@@ -17,6 +18,7 @@ export const TURRET_STATS = {
   armor: 60,
   magicResist: 60,
   range: 210,
+  inhibitionRangeMultiplier: 1.2,
   damage: 153,
 };
 const {

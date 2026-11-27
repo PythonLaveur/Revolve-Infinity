@@ -45,7 +45,7 @@ export const GAME_PARAMS = {
     bridgeHeight: 88,
     bridgeLaneOffsetY: 154,
     kingTowerDepthFromEdge: 112,
-    innerTurretDepthFromEdge: 154,
+    innerTurretDepthFromEdge: 182,
     outerTurretDepthFromEdge: 490,
     turretLaneOffsetY: 154,
   },

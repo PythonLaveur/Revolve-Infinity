@@ -1,14 +1,16 @@
 import { Game } from './engine/game.js';
 import { Renderer } from './rendering/renderer.js';
 import { applyArenaTransform, arenaTransformScale, screenToArena } from './rendering/arena_coordinates.js';
+import { drawStructureSprite } from './rendering/structure_sprites.js';
 import { Hud } from './ui/hud.js';
 import { BottomPanel } from './ui/bottom_panel.js';
 import { DraftPanel } from './ui/draft_panel.js';
 import { MatchSummary } from './ui/match_summary.js';
 import { StartMenu } from './ui/start_menu.js';
 import { applyResistance, scaleDamage } from './units/damage.js';
-import { collisionRadiusOf, edgeDistanceBetween } from './units/stats.js';
+import { collisionRadiusOf, edgeDistanceBetween, RADIUS_PER_SIZE } from './units/stats.js';
 import { GAME_PARAMS } from './data/game_parameters.js';
+import { BASE_STATS, TURRET_STATS } from './data/stats/turrets.js';
 
 const canvas = document.getElementById('battlefield');
 canvas.width = GAME_PARAMS.arena.width;
@@ -41,6 +43,12 @@ let redrawMode = false,
 const gameLogLines = [[], []];
 window.activeTroop = activeTroop;
 const $ = (id) => document.getElementById(id);
+const structureStats = (structure) => structure.type === 'base' ? BASE_STATS : TURRET_STATS;
+const structureAttackRange = (structure) => structureStats(structure).range + RADIUS_PER_SIZE * structureStats(structure).size;
+const structureInhibitionRange = (structure) => {
+  const stats = structureStats(structure);
+  return RADIUS_PER_SIZE * stats.size + stats.range * stats.inhibitionRangeMultiplier;
+};
 const toast = (s) => {
   const el = $('toast');
   el.textContent = s;
@@ -118,6 +126,7 @@ function showTroopInspector() {
   }
   if (activeStructure) {
     const structure = activeStructure;
+    const stats = structureStats(structure);
     const structureName = structure.type === 'base'
       ? 'King Tower'
       : `${structure.layer || 'Arena'} Turret`;
@@ -125,7 +134,7 @@ function showTroopInspector() {
       (structure.focus?.layer ? `${structure.focus.layer} turret` : structure.focus?.type === 'base' ? 'King Tower' : structure.focus ? 'Unit' : 'None');
     el.innerHTML = `<button class="inspector-close" id="closeInspector" aria-label="Close structure panel">×</button>
       <div class="inspector-heading"><strong>${structureName}</strong><span class="troop-state">${structure.team === 0 ? 'BLUE' : 'RED'}</span><span class="troop-hp">HP <b>${structure.hp}/${structure.maxHp}</b></span></div>
-      <div class="inspector-metrics"><span>TYPE <b>${structure.type === 'base' ? 'KING TOWER' : 'TURRET'}</b></span><span>RANGE <b>${structure.range}</b></span><span>DAMAGE <b>${structure.damage}</b></span><span>ARMOR <b>${structure.armor}</b></span><span>MAGIC RESIST <b>${structure.magicResist}</b></span><span>SIZE <b>${structure.size}</b></span><span>AGGRO <b>${structure.aggro}</b></span></div>
+      <div class="inspector-metrics"><span>TYPE <b>${structure.type === 'base' ? 'KING TOWER' : 'TURRET'}</b></span><span>ATTACK RANGE <b>${stats.range}</b></span><span>INHIBITION RANGE <b>${Math.round(structureInhibitionRange(structure))}</b></span><span>INHIBITION FACTOR <b>×${stats.inhibitionRangeMultiplier}</b></span><span>DAMAGE <b>${stats.damage}</b></span><span>ARMOR <b>${stats.armor}</b></span><span>MAGIC RESIST <b>${stats.magicResist}</b></span><span>SIZE <b>${stats.size}</b></span><span>AGGRO <b>${stats.aggro}</b></span></div>
       <div class="inspector-abilities">FOCUS · ${focusName}</div>`;
     el.classList.remove('hidden');
     $('closeInspector').onclick = () => {
@@ -172,8 +181,8 @@ function showTroopInspector() {
     ? `<span>${s.resourceLabel.toUpperCase()} <b>${activeTroop.energy.toFixed(1)}${s.resourceMaximum ? `/${s.resourceMaximum}` : ''}</b></span>${s.resourceDecayGraceTurns !== undefined ? `<span>DECAY GRACE <b>${Math.max(0, s.resourceDecayGraceTurns - activeTroop.energyIdleTurns)} turns</b></span>` : ''}`
     : '';
   const isOwner = activeTroop.team === game.turns.currentTeam;
-  const controllable = isOwner && !activeTroop.isMinion && !activeTroop.isDrone && !activeTroop.isClone && !activeTroop.isSummon && !s.isMinion && !s.isSummon && !s.isBuilding;
-  const canMove = controllable && activeTroop.availableMovement > 0.01 && !activeTroop.stunned && !activeTroop.burrowed;
+  const controllable = isOwner && !activeTroop.isMinion && !activeTroop.isDrone && !activeTroop.isClone && !activeTroop.isSummon && !s.isMinion && !s.isSummon;
+  const canMove = controllable && !s.isBuilding && activeTroop.availableMovement > 0.01 && !activeTroop.stunned && !activeTroop.burrowed;
   const eligibleTargets = activeTroop.eligibleTargets(game.targetsFor(activeTroop));
   const hasTargetInRange = eligibleTargets.some((target) =>
     target.hp > 0 && activeTroop.attackDistanceTo(target) <= activeTroop.attackRange,
@@ -242,7 +251,7 @@ function showCardInfo(card) {
     if (!hero) return;
     const abilities = Object.values(game.abilities).filter((ability) => ability.troop === card.troopId);
     el.classList.add('hero-card-modal');
-    el.innerHTML = `<button class="modal-close" id="closeAbilityModal">×</button><small>HERO CARD</small><h3>${hero.name}</h3><p>${hero.description || 'Hero card.'}</p><div><span>Elixir cost: ${hero.elixirCost}</span><span>HP: ${hero.hp}</span><span>Attack range: ${hero.range}</span><span>Sight range: ${hero.sight}</span></div><section class="hero-card-skills"><strong>SKILLS</strong>${abilities.map((ability) => `<article><b>${ability.name}</b><p>${ability.description || 'Hero ability.'}</p></article>`).join('')}</section>`;
+    el.innerHTML = `<button class="modal-close" id="closeAbilityModal">×</button><small>HERO CARD</small><h3>${hero.name}</h3><p>${hero.description || 'Hero card.'}</p><div><span>Ink cost: ${hero.elixirCost}</span><span>HP: ${hero.hp}</span><span>Attack range: ${hero.range}</span><span>Sight range: ${hero.sight}</span></div><section class="hero-card-skills"><strong>SKILLS</strong>${abilities.map((ability) => `<article><b>${ability.name}</b><p>${ability.description || 'Hero ability.'}</p></article>`).join('')}</section>`;
     el.classList.remove('hidden');
     $('closeAbilityModal').onclick = () => el.classList.add('hidden');
     return;
@@ -543,7 +552,7 @@ function drawExtras() {
     c.shadowColor = c.strokeStyle;
     c.shadowBlur = 10;
     c.beginPath();
-    c.arc(activeStructure.x, activeStructure.y, activeStructure.range + activeStructure.radius, 0, Math.PI * 2);
+    c.arc(activeStructure.x, activeStructure.y, structureAttackRange(activeStructure), 0, Math.PI * 2);
     c.stroke();
     c.restore();
   }
@@ -802,18 +811,20 @@ function drawExtras() {
     const radius = turret.radius;
     const sizeScale = radius / 27;
     const color = turret.team === 0 ? '#55e1dd' : '#ff6978';
-    c.fillStyle = color;
-    c.shadowColor = c.fillStyle;
-    c.shadowBlur = 18;
-    c.beginPath();
-    c.arc(0, 0, radius, 0, Math.PI * 2);
-    c.fill();
-    c.fillStyle = '#151923';
-    c.beginPath();
-    c.arc(0, 0, radius * (15 / 27), 0, Math.PI * 2);
-    c.fill();
-    c.fillStyle = '#eef2f7';
-    c.fillRect(-18 * sizeScale, -4.5 * sizeScale, 36 * sizeScale, 9 * sizeScale);
+    if (!drawStructureSprite(c, turret, radius)) {
+      c.fillStyle = color;
+      c.shadowColor = color;
+      c.shadowBlur = 18;
+      c.beginPath();
+      c.arc(0, 0, radius, 0, Math.PI * 2);
+      c.fill();
+      c.fillStyle = '#151923';
+      c.beginPath();
+      c.arc(0, 0, radius * (15 / 27), 0, Math.PI * 2);
+      c.fill();
+      c.fillStyle = '#eef2f7';
+      c.fillRect(-18 * sizeScale, -4.5 * sizeScale, 36 * sizeScale, 9 * sizeScale);
+    }
     const gap = 4 * Math.sqrt(turret.size);
     const barHeight = 5 * Math.sqrt(turret.size);
     const barWidth = radius * 1.7;
@@ -834,20 +845,22 @@ function drawExtras() {
     c.scale(1 / arenaScale.x, 1 / arenaScale.y);
     const color = tower.team === 0 ? '#55e1dd' : '#ff6978';
     const radius = tower.radius;
-    c.fillStyle = color;
-    c.shadowColor = color;
-    c.shadowBlur = 22;
-    c.fillRect(-radius, -radius, radius * 2, radius * 2);
-    c.fillStyle = '#10141b';
-    c.fillRect(-radius * 0.75, -radius * 0.75, radius * 1.5, radius * 1.5);
-    c.fillStyle = color;
-    c.beginPath();
-    c.moveTo(0, -radius * 0.5);
-    c.lineTo(radius * 0.5, radius / 3);
-    c.lineTo(-radius * 0.5, radius / 3);
-    c.closePath();
-    c.fill();
-    c.shadowBlur = 0;
+    if (!drawStructureSprite(c, tower, radius)) {
+      c.fillStyle = color;
+      c.shadowColor = color;
+      c.shadowBlur = 22;
+      c.fillRect(-radius, -radius, radius * 2, radius * 2);
+      c.fillStyle = '#10141b';
+      c.fillRect(-radius * 0.75, -radius * 0.75, radius * 1.5, radius * 1.5);
+      c.fillStyle = color;
+      c.beginPath();
+      c.moveTo(0, -radius * 0.5);
+      c.lineTo(radius * 0.5, radius / 3);
+      c.lineTo(-radius * 0.5, radius / 3);
+      c.closePath();
+      c.fill();
+      c.shadowBlur = 0;
+    }
     const gap = 4 * Math.sqrt(tower.size);
     const barHeight = 5 * Math.sqrt(tower.size);
     const barWidth = radius * 1.7;
@@ -863,12 +876,21 @@ function drawExtras() {
   for (const structure of [...game.board.turrets, ...game.board.towers]) {
     if (structure.hp <= 0) continue;
     c.save();
-    c.strokeStyle = structure.team === 0 ? '#55e1dd55' : '#ff697855';
-    c.lineWidth = 2;
-    c.setLineDash([8, 7]);
+    const emphasizedEnemyTurret = selectedMode === 'deploy' && selectedCard?.kind === 'troop' &&
+      game.board.turrets.includes(structure) && structure.team !== game.turns.currentTeam;
+    c.strokeStyle = emphasizedEnemyTurret
+      ? '#ffe08a'
+      : structure.team === 0 ? '#55e1dd55' : '#ff697855';
+    c.lineWidth = emphasizedEnemyTurret ? 4 : 2;
+    c.setLineDash(emphasizedEnemyTurret ? [8, 5] : [8, 7]);
+    if (emphasizedEnemyTurret) {
+      c.shadowColor = '#ffad55';
+      c.shadowBlur = 12;
+    }
     c.beginPath();
-    c.arc(structure.x, structure.y, structure.range + structure.radius, 0, Math.PI * 2);
+    c.arc(structure.x, structure.y, structureAttackRange(structure), 0, Math.PI * 2);
     c.stroke();
+    c.shadowBlur = 0;
     c.setLineDash([]);
     c.restore();
   }
@@ -1028,7 +1050,7 @@ function renderUI() {
   draftPanel.update(game);
   bottom.render(game, selectCard, activeTroop, showCardInfo, selectedRedraw);
   updateDeploymentPreview();
-  renderer.draw(game, hover, selectedMode);
+  renderer.draw(game, hover, selectedMode, selectedCard);
   drawExtras();
   showTroopInspector();
 }
@@ -1097,7 +1119,7 @@ function openRedraw(resource) {
   const el = $('redrawModal');
   el.classList.remove('hidden');
   el.querySelector('strong').textContent =
-    `Discard skills for 100 ${resource === 'elixir' ? 'Elixir' : 'AP'}`;
+    `Discard skills for 100 ${resource === 'elixir' ? 'Ink' : 'AP'}`;
   el.querySelector('span').textContent = 'Select up to 3 skill cards';
   renderUI();
 }
@@ -1166,7 +1188,7 @@ function loop(timestamp = performance.now()) {
   }
   else if (draftChanged) bottom.render(game, selectCard, activeTroop, showCardInfo, selectedRedraw);
 
-  renderer.draw(game, hover, selectedMode);
+  renderer.draw(game, hover, selectedMode, selectedCard);
   drawExtras();
 
   if (!isMovingNow && wasMoving) {

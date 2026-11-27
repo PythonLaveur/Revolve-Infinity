@@ -9,7 +9,7 @@ export class Renderer {
     this.arenaBackground = new Image();
     this.arenaBackground.src = new URL('../data/game-icons/rec_legends_arena_1512x560_narrow_river.png', import.meta.url).href;
   }
-  draw(game, hover, selectedMode) {
+  draw(game, hover, selectedMode, selectedCard = null) {
     const c = this.ctx,
       w = this.canvas.width,
       h = this.canvas.height;
@@ -43,17 +43,28 @@ export class Renderer {
     }
     for (const structure of [...game.board.turrets, ...game.board.towers]) {
       if (structure.hp <= 0) continue;
-      const inhibitionRange = structure.radius + structure.range * 1.3;
-      c.fillStyle = structure.team === 0 ? '#55e1dd10' : '#ff697810';
+      const inhibitionRange = structure.radius + structure.range * structure.inhibitionRangeMultiplier;
+      const emphasizedEnemyTurret = selectedMode === 'deploy' && selectedCard?.kind === 'troop' &&
+        game.board.turrets.includes(structure) && structure.team !== game.turns.currentTeam;
+      c.fillStyle = emphasizedEnemyTurret
+        ? '#ff334326'
+        : structure.team === 0 ? '#55e1dd10' : '#ff697810';
       c.beginPath();
       c.arc(structure.x, structure.y, inhibitionRange, 0, Math.PI * 2);
       c.fill();
-      c.strokeStyle = structure.team === 0 ? '#55e1dd88' : '#ff697888';
-      c.lineWidth = 2;
-      c.setLineDash([10, 8]);
+      c.strokeStyle = emphasizedEnemyTurret
+        ? '#ff536d'
+        : structure.team === 0 ? '#55e1dd88' : '#ff697888';
+      c.lineWidth = emphasizedEnemyTurret ? 3.5 : 2;
+      c.setLineDash(emphasizedEnemyTurret ? [12, 6] : [10, 8]);
+      if (emphasizedEnemyTurret) {
+        c.shadowColor = '#ff365f';
+        c.shadowBlur = 11;
+      }
       c.beginPath();
       c.arc(structure.x, structure.y, inhibitionRange, 0, Math.PI * 2);
       c.stroke();
+      c.shadowBlur = 0;
       c.setLineDash([]);
     }
     for (const zone of game.board.zones) {

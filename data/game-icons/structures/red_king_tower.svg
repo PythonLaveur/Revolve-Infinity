@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+ <defs>
+  <linearGradient id="steel" x1=".08" y1="0" x2=".9" y2="1"><stop stop-color="#f7eee0"/><stop offset=".2" stop-color="#c5b9aa"/><stop offset=".5" stop-color="#87717a"/><stop offset=".8" stop-color="#53384a"/><stop offset="1" stop-color="#28182d"/></linearGradient>
+  <linearGradient id="red" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff1df"/><stop offset=".24" stop-color="#ffc3a7"/><stop offset=".6" stop-color="#ff748a"/><stop offset="1" stop-color="#a42550"/></linearGradient>
+  <radialGradient id="core"><stop stop-color="#fff"/><stop offset=".16" stop-color="#fff0e7"/><stop offset=".45" stop-color="#ff8499"/><stop offset="1" stop-color="#d52e63" stop-opacity=".06"/></radialGradient>
+  <linearGradient id="gold" x2="0" y2="1"><stop stop-color="#fff3c6"/><stop offset=".5" stop-color="#d1a05d"/><stop offset="1" stop-color="#744833"/></linearGradient>
+  <filter id="shadow" x="-25%" y="-20%" width="150%" height="160%"><feGaussianBlur in="SourceAlpha" stdDeviation="10"/><feOffset dy="12"/><feComponentTransfer><feFuncA type="linear" slope=".72"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  <filter id="glow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="10" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  <pattern id="stonecut" width="18" height="16" patternUnits="userSpaceOnUse"><path d="M0 8h18M9 0v8M3 8v8" fill="none" stroke="#fff4ef" stroke-opacity=".15" stroke-width="2"/></pattern>
+ </defs>
+ <ellipse cx="128" cy="151" rx="116" ry="100" fill="#1b0b19" opacity=".74"/>
+ <g filter="url(#shadow)" stroke="#392439" stroke-width="7" stroke-linejoin="round">
+  <path d="M37 43 60 27h34l16-15h36l16 15h34l23 16v34l15 20v41l-15 20v34l-23 16h-34l-16 15h-36l-16-15H60l-23-16v-34l-15-20V97l15-20z" fill="#321f37"/>
+  <path d="M45 49 65 35h31l15-14h34l15 14h31l20 14v29l14 19v33l-14 19v29l-20 14h-31l-15 14h-34l-15-14H65l-20-14v-29l-14-19v-33l14-19z" fill="url(#steel)"/>
+  <path d="M54 57 72 44h28l14-13h28l14 13h28l18 13v23l12 18v29l-12 18v23l-18 13h-28l-14 13h-28l-14-13H72l-18-13v-23l-12-18V98l12-18z" fill="#806d74" stroke="#ead8c8" stroke-width="4"/>
+  <path d="M54 57 72 44h28l14-13h28l14 13h28l18 13v23l12 18v29l-12 18v23l-18 13h-28l-14 13h-28l-14-13H72l-18-13v-23l-12-18V98l12-18z" fill="url(#stonecut)" stroke="none"/>
+  <path d="M79 64 101 54h54l22 10 11 25-11 76-22 24h-54l-22-24-11-76z" fill="#4b2e43" stroke="url(#gold)" stroke-width="6"/>
+  <path d="m91 72 17-9h40l17 9 8 20-9 64-17 18h-38l-17-18-9-64z" fill="url(#steel)" stroke="#4b2d40" stroke-width="5"/>
+  <path d="M86 83h84v15H86zm-8 66h100v15H78z" fill="url(#red)" stroke="#48233b" stroke-width="4"/>
+  <path d="M105 95h46v55h-46z" fill="#29172d" stroke="url(#gold)" stroke-width="5"/>
+  <path d="m128 83 26 39-26 42-26-42z" fill="url(#red)" stroke="#fff0e8" stroke-width="5"/>
+  <circle cx="128" cy="121" r="28" fill="url(#core)" stroke="#fff0e7" stroke-width="4" filter="url(#glow)"/>
+  <path d="m128 89 7 21-7 11-7-11zm39 32-21 7-11-7 11-7zm-39 39-7-21 7-11 7 11zm-39-39 21-7 11 7-11 7z" fill="url(#gold)" stroke="#fff1ca" stroke-width="3"/>
+  <path d="M36 45 62 39l-4 31-22 7zm184 0-26-6 4 31 22 7zM36 211l26 6-4-31-22-7zm184 0-26 6 4-31 22-7z" fill="url(#red)" stroke="#fff1e7" stroke-width="4"/>
+  <path d="m128 15 12 26-12 13-12-13zM241 128l-26 12-13-12 13-12zM128 241l-12-26 12-13 12 13zM15 128l26-12 13 12-13 12z" fill="url(#gold)" stroke="#fff1b8" stroke-width="4"/>
+  <path d="M77 51 61 27m118 24 16-24M77 205l-16 24m118-24 16 24" stroke="#e4c780" stroke-width="5"/>
+ </g>
+ <path d="M128 31v34m0 112v34M31 128h35m124 0h35" stroke="#ffd0d6" stroke-width="5" filter="url(#glow)" opacity=".85"/>
+ <circle cx="128" cy="121" r="6" fill="#fff"/>
+</svg>

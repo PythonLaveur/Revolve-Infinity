@@ -569,22 +569,29 @@ export class Game {
   }
   findPlacementPosition(team, x, y, stats, occupied = [], respectInhibition = true) {
     const radius = this.collisionRadiusForStats(stats);
+    if (this.getPlacementFailureReasons(team, x, y, stats, occupied, respectInhibition).length) return null;
+    return { x, y, radius };
+  }
+  getPlacementFailureReasons(team, x, y, stats, occupied = [], respectInhibition = true) {
+    const radius = this.collisionRadiusForStats(stats);
     const movementType = stats.movementType || 'ground';
+    const reasons = [];
     if (
       x < radius || x > this.board.width - radius ||
       y < radius || y > this.board.height - radius
-    ) return null;
+    ) reasons.push('outside the arena');
+    if (this.isBlockedByTerrain(x, y, radius, movementType)) reasons.push('blocked by a fixed obstacle');
+    if (respectInhibition && this.isInsideEnemyInhibitionRange(team, x, y, radius))
+      reasons.push('inside an enemy structure inhibition range');
+
     const fixedTroops = this.board.troops
       .filter((troop) => troop.hp > 0 && !troop.burrowed && troop.stats.isBuilding &&
         (troop.stats.movementType || 'ground') === movementType)
       .map((troop) => ({ x: troop.x, y: troop.y, radius: troop.collisionRadius }));
     const blockers = [...occupied, ...fixedTroops];
-    if (
-      this.isBlockedByTerrain(x, y, radius, movementType) ||
-      (respectInhibition && this.isInsideEnemyInhibitionRange(team, x, y, radius)) ||
-      blockers.some((other) => Math.hypot(x - other.x, y - other.y) < radius + other.radius)
-    ) return null;
-    return { x, y, radius };
+    if (blockers.some((other) => Math.hypot(x - other.x, y - other.y) < radius + other.radius))
+      reasons.push('overlaps a fixed building or another unit in the deployment group');
+    return reasons;
   }
   getDeploymentPlan(card, x, y, team = this.turns.currentTeam) {
     const stats = this.stats[card?.troopId];
@@ -600,12 +607,14 @@ export class Game {
     const positions = [];
     for (const point of points) {
       const placement = this.findPlacementPosition(team, point.x, point.y, stats, positions);
-      if (!placement)
+      if (!placement) {
+        const reasons = this.getPlacementFailureReasons(team, point.x, point.y, stats, positions);
         return {
           valid: false,
           positions: [...positions, { x: point.x, y: point.y, radius }],
-          message: 'Invalid deployment: arena edge, obstacle, or enemy deployment zone',
+          message: `Invalid deployment: ${reasons.join('; ')}`,
         };
+      }
       positions.push(placement);
     }
     return { valid: true, positions, message: '' };
@@ -1222,7 +1231,7 @@ export class Game {
         structure.team !== team &&
         structure.hp > 0 &&
         Math.hypot(structure.x - x, structure.y - y) <=
-          structure.range * 1.3 + structure.radius + unitRadius,
+          structure.range * structure.inhibitionRangeMultiplier + structure.radius + unitRadius,
     );
   }
 }

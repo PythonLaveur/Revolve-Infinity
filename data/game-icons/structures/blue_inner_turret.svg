@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+ <defs>
+  <linearGradient id="steel" x1=".1" y1=".05" x2=".9" y2=".95"><stop stop-color="#f7f0df"/><stop offset=".22" stop-color="#b8c0b4"/><stop offset=".56" stop-color="#667d83"/><stop offset=".84" stop-color="#30495b"/><stop offset="1" stop-color="#17283c"/></linearGradient>
+  <linearGradient id="blue" x1=".12" y1="0" x2=".88" y2="1"><stop stop-color="#e9fff3"/><stop offset=".28" stop-color="#9bfff0"/><stop offset=".64" stop-color="#44dce0"/><stop offset="1" stop-color="#1682a9"/></linearGradient>
+  <radialGradient id="core"><stop stop-color="#fff"/><stop offset=".22" stop-color="#e4fff6"/><stop offset=".52" stop-color="#69fff0"/><stop offset="1" stop-color="#1ab5d6" stop-opacity=".08"/></radialGradient>
+  <linearGradient id="gold" x2="0" y2="1"><stop stop-color="#fff3bd"/><stop offset=".5" stop-color="#d3a45d"/><stop offset="1" stop-color="#765036"/></linearGradient>
+  <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%"><feGaussianBlur in="SourceAlpha" stdDeviation="7"/><feOffset dy="8"/><feComponentTransfer><feFuncA type="linear" slope=".65"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  <filter id="glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="7" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  <pattern id="etch" width="12" height="12" patternUnits="userSpaceOnUse"><path d="M0 6h12M6 0v12" stroke="#f4fff3" stroke-opacity=".13" stroke-width="1.5"/></pattern>
+ </defs>
+ <ellipse cx="128" cy="143" rx="105" ry="91" fill="#061321" opacity=".7"/>
+ <g transform="translate(12.8 12.8) scale(.9)" filter="url(#shadow)" stroke="#1b3041" stroke-linejoin="round">
+  <path d="M128 20 174 38 218 82 236 128 218 174 174 218 128 236 82 218 38 174 20 128 38 82 82 38Z" fill="#17283a" stroke-width="6"/>
+  <path d="M128 31 169 47 209 87 225 128 209 169 169 209 128 225 87 209 47 169 31 128 47 87 87 47Z" fill="url(#steel)" stroke="#e4dcc5" stroke-width="4"/>
+  <path d="M128 42 164 56 200 92 214 128 200 164 164 200 128 214 92 200 56 164 42 128 56 92 92 56Z" fill="#526c78" stroke="#283e4d" stroke-width="3"/>
+  <path d="M128 42 164 56 200 92 214 128 200 164 164 200 128 214 92 200 56 164 42 128 56 92 92 56Z" fill="url(#etch)" stroke="none"/>
+  <path d="M128 55 157 67 189 99 201 128 189 157 157 189 128 201 99 189 67 157 55 128 67 99 99 67Z" fill="#20394b" stroke="url(#gold)" stroke-width="4"/>
+  <path d="M128 67 150 76 180 106 189 128 180 150 150 180 128 189 106 180 76 150 67 128 76 106 106 76Z" fill="url(#steel)" stroke="#d8d5c1" stroke-width="3"/>
+  <path d="M128 78 145 85 171 111 178 128 171 145 145 171 128 178 111 171 85 145 78 128 85 111 111 85Z" fill="#152a3b" stroke="url(#blue)" stroke-width="4"/>
+  <circle cx="128" cy="128" r="44" fill="#233b4a" stroke="url(#gold)" stroke-width="4"/>
+  <circle cx="128" cy="128" r="36" fill="#111f30" stroke="#c9d5c9" stroke-width="2"/>
+  <circle cx="128" cy="128" r="29" fill="url(#core)" stroke="url(#blue)" stroke-width="4" filter="url(#glow)"/>
+  <path d="M128 89 139 116 128 128 117 116Z M167 128 140 139 128 128 140 117Z M128 167 117 140 128 128 139 140Z M89 128 116 117 128 128 116 139Z" fill="url(#blue)" stroke="#eafffa" stroke-width="2"/>
+  <circle cx="128" cy="128" r="10" fill="#f7ffff" stroke="#78fff0" stroke-width="4"/>
+  <path d="M116 25h24l-4 24h-16z M231 116v24l-24-4v-16z M116 231h24l-4-24h-16z M25 116v24l24-4v-16z" fill="url(#blue)" stroke="#effff6" stroke-width="3"/>
+  <path d="M76 40 94 48 77 69 56 61z M180 40 162 48 179 69 200 61z M76 216 94 208 77 187 56 195z M180 216 162 208 179 187 200 195z" fill="url(#gold)" stroke="#fff0bf" stroke-width="3"/>
+  <path d="M105 52 128 43l23 9-5 14h-36z M204 105l9 23-9 23-14-5v-36z M105 204l23 9 23-9-5-14h-36z M52 105l-9 23 9 23 14-5v-36z" fill="url(#steel)" stroke="#e3dfcb" stroke-width="3"/>
+ </g>
+ <path d="M128 31v25m0 144v25M31 128h25m144 0h25" stroke="#b7fff1" stroke-width="4" filter="url(#glow)"/>
+</svg>

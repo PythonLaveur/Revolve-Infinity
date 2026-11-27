@@ -9,6 +9,7 @@
   <body>
     <main class="game-shell">
       <header class="topbar">
+        <button id="surrender" class="cancel-action surrender-action surrender-top-left">SURRENDER</button>
         <div class="brand">
           <div><strong>Re:creators Legends</strong></div>
         </div>
@@ -58,8 +59,8 @@
           <div class="hand-row-label"><small>HEROES</small></div>
           <div class="hand-stack">
             <div id="heroHand" class="hand hero-hand"></div>
-            <div class="resource-meter elixir-meter" role="meter" aria-label="Elixir" aria-valuemin="0" aria-valuemax="2000" aria-valuenow="1200">
-              <small>ELIXIR</small>
+            <div class="resource-meter elixir-meter" role="meter" aria-label="Ink" aria-valuemin="0" aria-valuemax="2000" aria-valuenow="1200">
+              <small>INK</small>
               <div class="resource-track"><i id="elixirMeterFill"></i></div>
               <div class="resource-drop"><strong id="elixirMeterValue">1200</strong></div>
             </div>
@@ -81,8 +82,7 @@
         <aside class="hand-controls">
           <button id="cancelAction" class="cancel-action">CANCEL</button>
           <button id="discardAp" class="cancel-action">REDRAW −100 AP</button>
-          <button id="discardElixir" class="cancel-action">REDRAW −100 ELIXIR</button>
-          <button id="surrender" class="cancel-action surrender-action">SURRENDER</button>
+          <button id="discardElixir" class="cancel-action">REDRAW −100 INK</button>
         </aside>
       </footer>
     </main>
